@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { deskHitBy, obstacleHitBy } from '../src/office/flow.ts';
-import { layoutOffice } from '../src/office/layout.ts';
+import { deskHitBy, obstacleHitBy, wallHitBy } from '../src/office/flow.ts';
+import { layoutBuilding, layoutOffice } from '../src/office/layout.ts';
 import { dirOf, MAX_OUT_RATIO, OfficeSim, WALK_SPEED } from '../src/office/sim.ts';
 import { IDLE_VIEW } from '../src/office/status.ts';
 import { loadTeams, summarizeTeams } from '../server/teams.mjs';
@@ -24,22 +24,6 @@ function run(sim, from, seconds, each = () => {}, stepMs = 50) {
   return ts;
 }
 const actor = (sim, name) => sim.actors.find((a) => a.spot.name === name);
-
-/** Các đoạn tường (kể cả hai bên cửa) của mọi khu có tường. */
-function wallRects(l) {
-  const out = [];
-  const t = 0.12;
-  for (const tile of l.tiles.filter((x) => x.walls !== 'none')) {
-    const x0 = tile.x - tile.w / 2;
-    const x1 = tile.x + tile.w / 2;
-    const z0 = tile.z - tile.d / 2;
-    const z1 = tile.z + tile.d / 2;
-    const d = { from: tile.x + tile.door.from, to: tile.x + tile.door.to };
-    const wall = (z, hasDoor) => (hasDoor ? [{ x0, x1: d.from, z0: z - t, z1: z + t }, { x0: d.to, x1, z0: z - t, z1: z + t }] : [{ x0, x1, z0: z - t, z1: z + t }]);
-    out.push(...wall(z0, tile.doorSide === 'back'), ...wall(z1, tile.doorSide === 'front'), { x0: x0 - t, x1: x0 + t, z0, z1 }, { x0: x1 - t, x1: x1 + t, z0, z1 });
-  }
-  return out;
-}
 
 test('hướng nhìn đổi thành bốn hướng của hình vẽ', () => {
   assert.equal(dirOf(0), 'down');
@@ -92,7 +76,6 @@ test('đọc code kéo dài thì đi thư viện; thoáng qua thì không; xong 
 
 test('tốc độ đi bộ đúng và đường đi không cắt qua bàn, đồ đạc hay tường (theo từng bước mô phỏng)', () => {
   const l = layout();
-  const walls = wallRects(l);
   const sim = new OfficeSim(l);
   sim.setViews({
     Cúc: view({ status: 'working', activity: 'reading' }), Giang: view({ status: 'working', activity: 'command' }),
@@ -112,7 +95,7 @@ test('tốc độ đi bộ đúng và đường đi không cắt qua bàn, đồ
       assert.equal(own, null, `${a.spot.name} đứng đè ${own} tại (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
       const desk = deskHitBy(l, [p, p]);
       assert.ok(desk === null || a.walking === false, `${a.spot.name} đi xuyên bàn của ${desk}`);
-      for (const r of walls) assert.equal(p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1, false, `${a.spot.name} xuyên tường tại (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+      assert.equal(wallHitBy(l, [p]), null, `${a.spot.name} xuyên tường tại (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
     }
   });
   assert.ok(maxStep <= WALK_SPEED * 0.1 + 1e-9, `mỗi bước không đi quá tốc độ (${maxStep.toFixed(3)} m)`);
@@ -146,7 +129,6 @@ test('rảnh thì không ngồi yên: tự vươn vai, nhấp cà phê, đi pha 
   const animsSeen = new Set();
   let maxOut = 0;
   const allowed = new Set(['desk', 'pantry', 'window', 'meeting', 'wc', 'library', 'lounge']);
-  const walls = wallRects(l);
   run(sim, 0, 300, () => {
     const out = sim.actors.filter((a) => a.idlePlace !== null).length;
     maxOut = Math.max(maxOut, out);
@@ -157,7 +139,7 @@ test('rảnh thì không ngồi yên: tự vươn vai, nhấp cà phê, đi pha 
       const p = { x: a.x, z: a.z };
       if (!(a.place === 'desk' && !a.walking)) {
         assert.equal(obstacleHitBy(l, [p, p]), null, `${a.spot.name} đè đồ đạc`);
-        for (const r of walls) assert.equal(p.x > r.x0 && p.x < r.x1 && p.z > r.z0 && p.z < r.z1, false, `${a.spot.name} xuyên tường`);
+        assert.equal(wallHitBy(l, [p]), null, `${a.spot.name} xuyên tường`);
       }
     }
   }, 100);
@@ -210,4 +192,55 @@ test('văn phòng yên thì mô phỏng báo ngủ tới giờ hẹn tiếp theo
   sim.setViews({ An: view(WORK) });
   assert.equal(sim.nextWake, 0, 'dữ liệu đổi thì thức ngay');
   assert.equal(sim.step(200, NOW), true, 'có người đang gõ phím thì bận');
+});
+
+test('bộ mô phỏng dùng chung cho 2D và 3D: nhiều bên cùng bước, thời gian lùi nhẹ cũng không làm ai nhảy chỗ hay hỏng số', () => {
+  const l = layout();
+  const sim = new OfficeSim(l);
+  sim.setViews({ Cúc: view({ status: 'working', activity: 'reading' }) });
+  // Bộ vẽ đang mở bước theo đồng hồ khung hình; bộ đếm nền (hoặc bộ vẽ kia sau khi đổi 2D/3D) bước chen vào với mốc cũ hơn một chút.
+  let ts = run(sim, 0, 8);
+  const cuc = actor(sim, 'Cúc');
+  assert.equal(cuc.walking, true, 'đang đi tới thư viện');
+  const at = { x: cuc.x, z: cuc.z };
+  sim.step(ts - 400, NOW + ts); // mốc lùi
+  assert.deepEqual({ x: cuc.x, z: cuc.z }, at, 'mốc lùi không làm ai đi lùi hay nhảy');
+  for (const a of sim.actors) assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z));
+  // Hai bên bước xen kẽ vẫn cho cùng quãng đường như một bên bước đều: không đi nhanh gấp đôi.
+  const sim2 = new OfficeSim(l);
+  sim2.setViews({ Cúc: view({ status: 'working', activity: 'reading' }) });
+  let t2 = 0;
+  for (let i = 0; i < 160; i += 1) {
+    t2 += 50;
+    sim2.step(t2, NOW + t2);
+    sim2.step(t2 - 20, NOW + t2); // bên kia bước xen kẽ với mốc cũ hơn
+  }
+  const a1 = actor(sim, 'Cúc');
+  const a2 = actor(sim2, 'Cúc');
+  assert.ok(Math.hypot(a1.x - a2.x, a1.z - a2.z) < WALK_SPEED * 0.6, 'cùng một chỗ (sai khác dưới nửa giây đi bộ)');
+  ts = run(sim, ts, 20);
+  assert.equal(cuc.place, 'library', 'vẫn tới nơi bình thường');
+});
+
+test('mỗi tầng một bộ mô phỏng độc lập; người ở tầng khác không ảnh hưởng nhau, giữ nguyên trạng thái khi không ai xem', () => {
+  const teams = [];
+  for (let i = 0; i < 8; i += 1) teams.push({ id: `t${i}`, name: `t${i}`, lead: `L${i}`, members: [{ name: `L${i}`, role: 'lead', title: 'lead', model: 'sonnet', effort: 'low', strengths: [], isLead: true }, { name: `A${i}`, role: 'dev', title: 'dev', model: 'sonnet', effort: 'low', strengths: [], isLead: false }, { name: `B${i}`, role: 'dev', title: 'dev', model: 'sonnet', effort: 'low', strengths: [], isLead: false }] });
+  const b = layoutBuilding(teams);
+  assert.ok(b.floors.length >= 2);
+  const sims = b.floors.map((f) => new OfficeSim(f));
+  const upper = sims[1];
+  const who = upper.actors[0].spot.name;
+  assert.equal(sims[0].actors.some((a) => a.spot.name === who), false, 'mỗi người chỉ có mặt ở một tầng');
+  upper.setViews({ [who]: view({ status: 'working', activity: 'reading' }) });
+  // Tầng 1 chạy 20 giây, tầng 2 chạy ngầm: người ở tầng 2 vẫn tới thư viện của tầng 2 (không có đường xuyên tầng).
+  let ts = 0;
+  for (let i = 0; i < 600; i += 1) {
+    ts += 50;
+    upper.step(ts, NOW + ts);
+  }
+  const person = upper.actors.find((a) => a.spot.name === who);
+  const library = b.floors[1].rooms.find((r) => r.id === 'library');
+  assert.equal(person.place, 'library');
+  assert.ok(Math.abs(person.x - library.x) < library.w / 2 && Math.abs(person.z - library.z) < library.d / 2);
+  assert.ok(sims[0].actors.every((a) => a.place === 'desk' && !a.walking), 'tầng 1 không ai chạy khi không được bước');
 });

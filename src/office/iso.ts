@@ -7,7 +7,7 @@ import { createKit, type PillSprite } from './kit';
 import { TEAM_COLORS, type OfficeLayout } from './layout';
 import { lookFor } from './look';
 import type { OfficeScene, SceneDebug, SceneOptions } from './scene-types';
-import { OfficeSim, type Actor } from './sim';
+import type { OfficeSim, Actor } from './sim';
 import { bubbleOf, formatCountdown, IDLE_VIEW, lampOf, type Lamp, type PersonView } from './status';
 import { buildWorld } from './world3d';
 
@@ -52,7 +52,7 @@ interface Particle {
 }
 
 /** Dựng toàn bộ văn phòng trong `host`. Ném lỗi nếu trình duyệt không có WebGL (người gọi bắt và hiện danh sách thay thế). */
-export function createIsoScene(host: HTMLElement, layout: OfficeLayout, options: SceneOptions): OfficeScene {
+export function createIsoScene(host: HTMLElement, layout: OfficeLayout, options: SceneOptions, sim: OfficeSim): OfficeScene {
   const motion = !options.reducedMotion;
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -69,7 +69,6 @@ export function createIsoScene(host: HTMLElement, layout: OfficeLayout, options:
   const kit = createKit(scene, options.dark);
   const { track, mat, pill } = kit;
   const world = buildWorld(kit, layout, renderer);
-  const sim = new OfficeSim(layout, motion);
 
   // ---------- Camera isometric ----------
   const { walls } = layout;
@@ -320,6 +319,9 @@ export function createIsoScene(host: HTMLElement, layout: OfficeLayout, options:
         boardSince = Math.min(boardSince, a.arrivedAt);
       }
     }
+    const atPantry = sim.actors.some((a) => a.place === 'pantry' && !a.walking);
+    const inMeeting = sim.actors.some((a) => a.place === 'meeting' && !a.walking);
+    if (world.tick(t, { meeting: inMeeting, pantry: atPantry }) && motion) stillBusy = true;
     const shown = someoneAtBoard ? (motion ? Math.min(world.boardNotes.length, Math.floor((ts - boardSince) / 900) + 1) : world.boardNotes.length) : 0;
     world.boardNotes.forEach((note, i) => {
       note.visible = i < shown;
@@ -375,6 +377,7 @@ export function createIsoScene(host: HTMLElement, layout: OfficeLayout, options:
     renderer.render(scene, camera);
   };
   frame = requestAnimationFrame(tick);
+  const clockTimer = setInterval(invalidate, 1000); // kim đồng hồ và các chi tiết nhỏ chạy theo giờ thật
 
   const screenPos = (v: Visual) => {
     const p = new THREE.Vector3(v.actor.x, 1.6, v.actor.z).project(camera);
@@ -453,6 +456,7 @@ export function createIsoScene(host: HTMLElement, layout: OfficeLayout, options:
     },
     dispose() {
       cancelAnimationFrame(frame);
+      clearInterval(clockTimer);
       if (breakTimer) clearInterval(breakTimer);
       observer.disconnect();
       controls.dispose();

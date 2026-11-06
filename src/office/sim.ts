@@ -146,7 +146,7 @@ export class OfficeSim {
 
   private startWalk(a: Actor, want: Place, ts: number) {
     const slot = this.freeSlot(a, want);
-    const stand = standSpot(this.layout, a.spot, want, slot, want === 'lounge' ? this.actors.length : 1);
+    const stand = standSpot(this.layout, a.spot, want, slot);
     a.slot = slot;
     a.dest = want;
     a.face = stand.face;
@@ -204,8 +204,10 @@ export class OfficeSim {
    * khi tới `nextWake` hoặc khi dữ liệu đổi.
    */
   step(ts: number, now = Date.now()): boolean {
-    const dt = this.last === 0 ? 0 : Math.min((ts - this.last) / 1000, 0.5); // khung hình chậm (máy yếu) thì đi bù, đường đi vẫn đi qua đúng các điểm đã kiểm chứng
-    this.last = ts;
+    // Khung hình chậm (máy yếu) thì đi bù, đường đi vẫn đi qua đúng các điểm đã kiểm chứng. Nhiều bên cùng bước một bộ mô phỏng
+    // (bộ vẽ đang mở và bộ đếm nền khi chuyển 2D/3D hay sang tầng khác) nên thời gian không bao giờ lùi.
+    const dt = this.last === 0 ? 0 : Math.min(Math.max((ts - this.last) / 1000, 0), 0.5);
+    this.last = Math.max(ts, this.last);
     const breaking = this.onBreak(now);
     let busy = false;
     let wakeAt = Infinity;

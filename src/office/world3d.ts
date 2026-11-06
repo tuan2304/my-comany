@@ -3,19 +3,27 @@ import { PMREMGenerator } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { createChibi } from './chibi';
 import { furniture3d } from './furniture3d';
-import { TEAM_COLORS, type OfficeLayout, type Tile } from './layout';
+import { TEAM_COLORS, WALL_T, type Decor, type FloorStyle, type OfficeLayout, type Wall } from './layout';
 import { lookFor } from './look';
 import { mixColor, type Kit, type PillSprite } from './kit';
 
 /** Thế giới 3D: ánh sáng, đường phố quanh tòa nhà, sàn, tường kính, các khu và đồ đạc. Camera isometric nhìn từ góc trước phải. */
+
+export interface WorldState {
+  /** Có ai đang họp, đang ở pantry (hơi nước từ máy pha cà phê). */
+  meeting: boolean;
+  pantry: boolean;
+}
 
 export interface World {
   loungeSign: PillSprite;
   beacon: THREE.Mesh | null;
   boardNotes: THREE.Mesh[];
   keyLight: THREE.DirectionalLight;
-  /** Người của Chủ (ngồi ở bàn Chủ), để scene cập nhật nếu cần. */
-  ownerRig: ReturnType<typeof createChibi>;
+  /** Người của Chủ (ngồi ở bàn Chủ, chỉ tầng 1). */
+  ownerRig: ReturnType<typeof createChibi> | null;
+  /** Cập nhật mỗi khung hình: kim đồng hồ chạy theo giờ thật, cá bơi, đèn tủ máy, màn hình họp, hơi nước cà phê. Trả về true nếu còn động. */
+  tick: (t: number, state: WorldState) => boolean;
 }
 
 function rng(seed: number): () => number {
@@ -311,43 +319,42 @@ export function buildWorld(kit: Kit, layout: OfficeLayout, renderer: THREE.WebGL
   });
 
   // ---------- Sàn trong nhà ----------
-  const floorColors: Record<string, [FloorKind, number]> = {
-    owner: ['wood', 0xe0b57a], director: ['carpet', 0xcbbde3], meeting1: ['carpet', 0xbdd2ea], meeting2: ['carpet', 0xbdd2ea],
-    library: ['wood', 0xcf9b5a], server: ['server', 0x4b4f63], archive: ['carpet', 0xe3dad2], wc: ['tile', 0xcfe8ee],
-    pantry: ['tile', 0xf3dcb4], rest: ['wood', 0xe0b57a], lobby: ['marble', 0xe4dcd4],
-  };
-  const floorMat = (kind: FloorKind, base: number, w: number, d: number) => {
-    const tex = floorTexture(kind, base, track);
+  const baseTextures = new Map<string, THREE.CanvasTexture>();
+  const floorMat = (style: FloorStyle, base: number, w: number, d: number) => {
+    const kind: FloorKind = style === 'dark' ? 'carpet' : style;
+    const key = `${kind}|${base}`;
+    let source = baseTextures.get(key);
+    if (!source) {
+      source = floorTexture(kind, base, track);
+      baseTextures.set(key, source);
+    }
+    const tex = track(source.clone()); // dùng chung ảnh, riêng cách lặp theo cỡ từng mảng sàn
+    tex.needsUpdate = true;
     tex.repeat.set(Math.max(w / 2.4, 1), Math.max(d / 2.4, 1));
     return track(new THREE.MeshStandardMaterial({ map: tex, roughness: kind === 'wood' || kind === 'marble' ? 0.55 : 0.95 }));
   };
-  const floorBox = (x: number, z: number, w: number, d: number, material: THREE.Material, y = 0.03, h = 0.06) => {
+  const floorBox = (x: number, z: number, w: number, d: number, material: THREE.Material, y: number, h: number) => {
     const m = new THREE.Mesh(track(new THREE.BoxGeometry(w, h, d)), material);
     m.position.set(x, y, z);
     m.receiveShadow = true;
     scene.add(m);
   };
-  // nền chung của không gian làm việc
   floorBox(midX, midZ, W - 0.2, D - 0.2, floorMat('carpet', 0xc9c2dc, W, D), 0.02, 0.04);
   for (const tile of layout.tiles) {
-    if (tile.kind === 'zone') {
+    if (tile.kind === 'room') floorBox(tile.x, tile.z, tile.w, tile.d, floorMat(tile.floor, tile.color, tile.w, tile.d), 0.03, 0.06);
+  }
+  for (const tile of layout.tiles) {
+    if (tile.kind === 'rug') floorBox(tile.x, tile.z, tile.w, tile.d, floorMat(tile.floor, tile.color, tile.w, tile.d), 0.065, 0.03);
+    else if (tile.kind === 'zone') {
       const color = mixColor(TEAM_COLORS[tile.colorIndex % TEAM_COLORS.length], 0xffffff, night ? 0.4 : 0.42);
-      floorBox(tile.x, tile.z, tile.w - 0.05, tile.d - 0.05, floorMat('carpet', color, tile.w, tile.d), 0.045, 0.05);
-    } else {
-      const [kind, base] = floorColors[tile.id] ?? ['carpet', 0xdddddd];
-      floorBox(tile.x, tile.z, tile.w, tile.d, floorMat(kind, base, tile.w, tile.d), 0.045, 0.05);
+      floorBox(tile.x, tile.z, tile.w - 0.05, tile.d - 0.05, floorMat('carpet', color, tile.w, tile.d), 0.065, 0.03);
     }
   }
-  // lối đi lát đá sáng
-  const stoneMat = floorMat('stone', 0xf1ece8, 6, 6);
-  const x0 = layout.lanes[0] - 0.9;
-  const x1 = layout.lanes[layout.lanes.length - 1] + 0.9;
-  for (const z of [layout.aisleBackZ, layout.aisleFrontZ]) floorBox((x0 + x1) / 2, z, x1 - x0, 1.8, stoneMat, 0.075, 0.04);
-  for (const lane of layout.lanes) floorBox(lane, (layout.aisleBackZ + layout.aisleFrontZ) / 2, 1.8, layout.aisleFrontZ - layout.aisleBackZ, stoneMat, 0.075, 0.04);
 
-  // ---------- Tường ngoài: tường kính cong sau và trái; lan can thấp bên phải và phía trước ----------
+  // ---------- Tường ngoài: tường kính sau và trái (nhìn thấy), lan can thấp phải và trước (cắt bớt cho camera nhìn vào) ----------
   const cream = tint(0xf6f0e8, 0x58526b);
   const frame = tint(0xdcd3c8, 0x7a7494);
+  const cap = tint(0x4a4560, 0x2b2840);
   const glass = track(new THREE.MeshStandardMaterial({ color: night ? 0x8e9de0 : 0xbfe4f4, transparent: true, opacity: night ? 0.16 : 0.24, roughness: 0.08, metalness: 0.1, depthWrite: false }));
   const curtainWall = (cx: number, cz: number, length: number, rotY: number) => {
     const g = new THREE.Group();
@@ -364,7 +371,6 @@ export function buildWorld(kit: Kit, layout: OfficeLayout, renderer: THREE.WebGL
   };
   curtainWall(midX, walls.minZ, W, 0);
   curtainWall(walls.minX, midZ, D, Math.PI / 2);
-  const lobby = layout.rooms.find((rm) => rm.id === 'lobby');
   const parapet = (cx: number, cz: number, length: number, rotY: number) => {
     if (length < 0.1) return;
     const g = new THREE.Group();
@@ -375,176 +381,225 @@ export function buildWorld(kit: Kit, layout: OfficeLayout, renderer: THREE.WebGL
     rbox(g, length, 0.08, 0.38, frame, 0, 0.82, 0, 0.04);
   };
   parapet(walls.maxX, midZ, D, Math.PI / 2);
-  if (lobby) {
-    const gapL = lobby.x - 1.7;
-    const gapR = lobby.x + 1.7;
+  const entrance = layout.entrance;
+  if (entrance) {
+    const gapL = entrance.x - 1.3;
+    const gapR = entrance.x + 1.3;
     parapet((walls.minX + gapL) / 2, walls.maxZ, gapL - walls.minX, 0);
     parapet((gapR + walls.maxX) / 2, walls.maxZ, walls.maxX - gapR, 0);
     // cửa vào: khung kính và mái che nhỏ
-    for (const dx of [-1.7, 1.7]) rbox(scene, 0.12, 2.8, 0.2, frame, lobby.x + dx, 1.4, walls.maxZ, 0.04);
-    rbox(scene, 3.6, 0.2, 0.7, cream, lobby.x, 2.85, walls.maxZ + 0.2, 0.06);
-    rbox(scene, 2.6, 0.03, 1.0, tint(0x6b7385, 0x3a384a), lobby.x, 0.1, walls.maxZ + 0.7, 0.01);
+    for (const dx of [-1.3, 1.3]) rbox(scene, 0.12, 2.8, 0.2, frame, entrance.x + dx, 1.4, walls.maxZ, 0.04);
+    rbox(scene, 3.4, 0.2, 0.7, cream, entrance.x, 2.85, walls.maxZ + 0.2, 0.06);
+    rbox(scene, 2.4, 0.03, 1.0, tint(0x6b7385, 0x3a384a), entrance.x, 0.1, walls.maxZ + 0.7, 0.01);
   } else parapet(midX, walls.maxZ, W, 0);
-  for (const [px, pz] of [[walls.minX, walls.minZ], [walls.maxX, walls.minZ], [walls.minX, walls.maxZ], [walls.maxX, walls.maxZ]] as const) rbox(scene, 0.5, 3.8, 0.5, cream, px, 1.9, pz, 0.12);
+  for (const [px, pz, h] of [[walls.minX, walls.minZ, 3.8], [walls.maxX, walls.minZ, 3.8], [walls.minX, walls.maxZ, 1.1], [walls.maxX, walls.maxZ, 1.1]] as const) rbox(scene, 0.5, h, 0.5, cream, px, h / 2, pz, 0.12);
 
-  // ---------- Tường và cửa từng phòng ----------
+  // ---------- Tường trong: tường đặc thấp (nhìn như mặt cắt nhà búp bê), tường kính ở phòng họp, thư viện, phòng Giám đốc ----------
   const roomGlass = track(new THREE.MeshStandardMaterial({ color: night ? 0x8e9de0 : 0xcfeaf6, transparent: true, opacity: night ? 0.14 : 0.2, roughness: 0.08, depthWrite: false }));
   const roomFrame = tint(0xe9e2d8, 0x8b86a6);
-  const wallH = 2.6;
-  const roomWalls = (tile: Tile) => {
-    const door = tile.door;
-    if (!door || tile.walls === 'none') return;
-    const solid = tile.walls === 'solid';
+  const SOLID_H = 1.15;
+  const GLASS_TOP = 2.3;
+  const T = WALL_T;
+  const innerWall = (seg: Wall) => {
+    const horizontal = seg.z0 === seg.z1;
+    const len = horizontal ? Math.abs(seg.x1 - seg.x0) : Math.abs(seg.z1 - seg.z0);
+    if (len < 0.05) return;
     const g = new THREE.Group();
-    g.position.set(tile.x, 0.06, tile.z);
+    g.position.set((seg.x0 + seg.x1) / 2, 0.06, (seg.z0 + seg.z1) / 2);
+    g.rotation.y = horizontal ? 0 : Math.PI / 2;
     scene.add(g);
-    const T = 0.12;
-    const hw = tile.w / 2;
-    const hd = tile.d / 2;
-    const seg = (xa: number, za: number, xb: number, zb: number, baseH: number) => {
-      const alongX = Math.abs(zb - za) < 1e-6;
-      const len = alongX ? Math.abs(xb - xa) : Math.abs(zb - za);
-      if (len < 0.05) return;
-      const cx = (xa + xb) / 2;
-      const cz = (za + zb) / 2;
-      if (solid) {
-        rbox(g, alongX ? len : T, wallH, alongX ? T : len, cream, cx, wallH / 2, cz, 0.03);
-        return;
-      }
-      rbox(g, alongX ? len : T, baseH, alongX ? T : len, cream, cx, baseH / 2, cz, 0.03);
-      const gh = wallH - baseH;
-      const pane = new THREE.Mesh(track(new THREE.BoxGeometry(alongX ? len : 0.04, gh, alongX ? 0.04 : len)), roomGlass);
-      pane.position.set(cx, baseH + gh / 2, cz);
-      g.add(pane);
-      rbox(g, alongX ? len : T + 0.02, 0.08, alongX ? T + 0.02 : len, roomFrame, cx, wallH, cz, 0.03);
-      const n = Math.max(Math.round(len / 2.4), 1);
-      for (let i = 0; i <= n; i += 1) {
-        const t = i / n;
-        rbox(g, alongX ? 0.05 : T + 0.01, gh, alongX ? T + 0.01 : 0.05, roomFrame, xa + (xb - xa) * t, baseH + gh / 2, za + (zb - za) * t, 0.02);
-      }
-    };
-    const onBack = tile.doorSide === 'back';
-    const backH = onBack ? 0.4 : 0.9;
-    const frontH = onBack ? 0.9 : 0.4;
-    if (onBack) {
-      seg(-hw, -hd, door.from, -hd, backH);
-      seg(door.to, -hd, hw, -hd, backH);
-      seg(-hw, hd, hw, hd, frontH);
-    } else {
-      seg(-hw, -hd, hw, -hd, backH);
-      seg(-hw, hd, door.from, hd, frontH);
-      seg(door.to, hd, hw, hd, frontH);
+    if (seg.kind === 'solid') {
+      rbox(g, len, SOLID_H, T, cream, 0, SOLID_H / 2, 0, 0.03);
+      rbox(g, len + 0.02, 0.05, T + 0.05, cap, 0, SOLID_H + 0.02, 0, 0.015);
+      return;
     }
-    seg(-hw, -hd, -hw, hd, 0.9);
-    seg(hw, -hd, hw, hd, 0.9);
-    const dz = onBack ? -hd : hd;
-    for (const x of [door.from, door.to]) rbox(g, 0.07, wallH, T + 0.02, roomFrame, x, wallH / 2, dz, 0.025);
-    rbox(g, door.to - door.from + 0.1, 0.3, T + 0.05, cream, (door.from + door.to) / 2, wallH - 0.15, dz, 0.04);
+    rbox(g, len, 0.55, T, cream, 0, 0.275, 0, 0.03);
+    const pane = new THREE.Mesh(track(new THREE.BoxGeometry(len, GLASS_TOP - 0.55, 0.04)), roomGlass);
+    pane.position.set(0, 0.55 + (GLASS_TOP - 0.55) / 2, 0);
+    g.add(pane);
+    rbox(g, len + 0.02, 0.07, T + 0.04, roomFrame, 0, GLASS_TOP, 0, 0.025);
+    const n = Math.max(Math.round(len / 2.4), 1);
+    for (let i = 0; i <= n; i += 1) rbox(g, 0.05, GLASS_TOP - 0.55, T + 0.01, roomFrame, -len / 2 + (len * i) / n, 0.55 + (GLASS_TOP - 0.55) / 2, 0, 0.02);
   };
-  const sign = (tile: Tile, text: string, dot: string | null, scale = 0.9) => {
+  for (const seg of layout.wallSegs) if (seg.kind !== 'outer') innerWall(seg);
+
+  // Cửa: hai cột khung và cánh cửa mở hé vào trong phòng (đúng kiểu mặt bằng mẫu).
+  const doorWood = tint(0xc99a6a, 0x7a5c44);
+  for (const door of layout.doors) {
+    if (door.kind === 'glass') continue;
+    const into = door.z < 0 ? -1 : 1; // phòng phía trên mở về -z, phòng phía dưới mở về +z
+    for (const dx of [-door.w / 2, door.w / 2]) rbox(scene, 0.1, SOLID_H + 0.2, T + 0.06, cap, door.x + dx, 0.06 + (SOLID_H + 0.2) / 2, door.z, 0.02);
+    const hinge = new THREE.Group();
+    hinge.position.set(door.x - door.w / 2 + 0.05, 0.06, door.z);
+    hinge.rotation.y = into * 1.25;
+    scene.add(hinge);
+    rbox(hinge, door.w - 0.14, 0.95, 0.04, doorWood, (door.w - 0.14) / 2, 0.5, 0, 0.012);
+    rbox(hinge, 0.04, 0.04, 0.07, 0xd6c27a, door.w - 0.28, 0.5, 0, 0.01);
+  }
+
+  const sign = (text: string, dot: string | null, x: number, y: number, z: number, scale = 0.85) => {
     const p = pill(text, scale);
     p.paint(text, dot, 'dark');
-    const dz = tile.doorSide === 'back' && tile.door ? -tile.d / 2 : tile.d / 2;
-    p.sprite.position.set(tile.x + (tile.door ? (tile.door.from + tile.door.to) / 2 : 0), tile.door ? wallH + 0.8 : 2.6, tile.z + dz - (tile.door ? 0 : 0.8));
+    p.sprite.position.set(x, y, z);
     scene.add(p.sprite);
     return p;
   };
 
-  let beacon: THREE.Mesh | null = null;
-  const boardNotes: THREE.Mesh[] = [];
-  let loungeSign: PillSprite | null = null;
-  let ownerRig: ReturnType<typeof createChibi> | null = null;
-  const frameArt = (g: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, c: number, onWall: 'back' | 'left' = 'back') => {
-    const f = rbox(g, w, h, 0.04, 0xf4efe8, x, y, z, 0.015);
-    rbox(g, w - 0.1, h - 0.1, 0.045, c, x, y, z + 0.005, 0.01);
-    if (onWall === 'left') f.rotation.y = 0;
+  // Nhãn từng phòng: gần cửa của phòng (hoặc giữa phòng nếu không có cửa).
+  const dotOf: Record<string, string> = {
+    library: '#f5a742', stairs: '#94a3b8', server: '#4cf08a', pantry: '#f0a44b', wc: '#6cc4c4', meeting1: '#5b9bd5', meeting2: '#5b9bd5',
+    director: '#8c7ae6', focus: '#8c7ae6', owner: '#f2c14e', archive: '#94a3b8', lobby: '#6cc4c4',
   };
-
   for (const tile of layout.tiles) {
-    roomWalls(tile);
-    const g = new THREE.Group();
-    g.position.set(tile.x, 0.07, tile.z);
-    scene.add(g);
-    if (tile.kind === 'zone') {
-      const color = TEAM_COLORS[tile.colorIndex % TEAM_COLORS.length];
-      const zone = layout.zones.find((z) => z.id === tile.id);
-      sign(tile, `${tile.label}${zone?.lead ? ` · ${zone.lead}` : ''}`, hex(color), 0.95).sprite.position.set(tile.x, 2.7, tile.z + tile.d / 2 - 0.4);
-      for (const pod of layout.pods.filter((p) => p.zoneId === tile.id)) {
-        rbox(scene, 4.4, 0.34, 0.05, tint(0xdfe6f0, 0x6a7088), pod.x, 1.03, pod.z, 0.02);
-        rbox(scene, 4.5, 0.03, 0.07, color, pod.x, 1.22, pod.z, 0.015);
-      }
-    } else if (tile.id === 'owner') {
-      const desk = new THREE.Group();
-      desk.position.set(0, 0, -0.2);
-      desk.scale.set(1.2, 1, 1);
-      g.add(desk);
-      rbox(desk, 2.2, 0.06, 1.1, 0xc99a6a, 0, 0.75, 0.9, 0.03);
-      for (const dx of [-1.0, 1.0]) rbox(desk, 0.06, 0.72, 1.0, 0x6b5a78, dx, 0.37, 0.9, 0.02);
-      const chair = rbox(g, 0.7, 0.1, 0.7, 0x2f2a3d, 0, 0.5, -0.95, 0.05);
-      chair.rotation.y = 0;
-      rbox(g, 0.7, 0.8, 0.09, 0x2f2a3d, 0, 0.92, -1.3, 0.05);
-      const owner = createChibi(lookFor('Chủ', '#f2c14e', { crown: true, director: false }), kit);
-      owner.root.position.set(0, 0.06, -0.9);
-      owner.root.rotation.y = 0;
-      owner.setPose({ action: 'type', seated: true, t: 0, phase: 1, motion: false });
-      g.add(owner.root);
-      ownerRig = owner;
-      beacon = new THREE.Mesh(track(new THREE.SphereGeometry(0.2, 14, 12)), track(new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xfacc15, emissiveIntensity: 1 })));
-      beacon.position.set(0, 2.5, 0.3);
-      beacon.visible = false;
-      g.add(beacon);
-      frameArt(g, -1.2, 1.7, -tile.d / 2 + 0.1, 0.8, 0.6, 0xf2a6b3);
-      sign(tile, tile.label, '#f2c14e', 0.8);
-    } else if (tile.id === 'director') {
-      const bz = -tile.d / 2 + 0.5;
-      rbox(g, 3.1, 1.4, 0.08, 0xfafbfd, 0, 1.75, bz, 0.03);
-      rbox(g, 3.22, 0.06, 0.1, 0x8a94a8, 0, 1.03, bz + 0.01, 0.02);
-      for (const dx of [-1.4, 1.4]) rbox(g, 0.06, 1.0, 0.06, 0x8a94a8, dx, 0.5, bz, 0.02);
-      layout.zones.slice(0, 4).forEach((zone, i) => {
-        const note = rbox(g, 0.55, 0.4, 0.04, TEAM_COLORS[zone.colorIndex % TEAM_COLORS.length], -1.05 + i * 0.7, 1.75, bz + 0.07, 0.02);
-        note.visible = false;
-        boardNotes.push(note);
-      });
-      sign(tile, tile.label, '#8c7ae6', 0.85);
-    } else if (tile.id === 'meeting1' || tile.id === 'meeting2') {
-      const bz = -tile.d / 2 + 0.2;
-      rbox(g, 2.8, 1.2, 0.06, 0xfafbfd, 0, 1.7, bz, 0.025);
-      rbox(g, 2.9, 0.07, 0.08, 0x8a94a8, 0, 2.33, bz + 0.01, 0.02);
-      rbox(g, 1.6, 0.04, 0.02, 0xa8b2c4, -0.4, 1.95, bz + 0.04, 0.01);
-      rbox(g, 0.6, 0.3, 0.02, 0x5b9bd5, 0.7, 1.55, bz + 0.04, 0.01);
-      sign(tile, tile.label, '#5b9bd5', 0.85);
-    } else if (tile.id === 'library') {
-      frameArt(g, 0, 2.3, -tile.d / 2 + 0.1, 0.7, 0.5, 0x9b6df0);
-      sign(tile, tile.label, '#f5a742', 0.85);
-    } else if (tile.id === 'server') {
-      sign(tile, tile.label, '#4cf08a', 0.85);
-    } else if (tile.id === 'archive') {
-      sign(tile, tile.label, '#94a3b8', 0.85);
-    } else if (tile.id === 'wc') {
-      for (const dx of [-1.0, 1.0]) {
-        rbox(g, 1.3, 2.0, 0.06, 0xdfe7ee, dx, 1.0, tile.d / 2 - 1.5, 0.02);
-        rbox(g, 0.5, 0.4, 0.6, 0xfafbfd, dx, 0.2, tile.d / 2 - 0.5, 0.12);
-      }
-      sign(tile, tile.label, '#6cc4c4', 0.7);
-    } else if (tile.id === 'pantry') {
-      sign(tile, tile.label, '#f0a44b', 0.85);
-    } else if (tile.id === 'rest') {
-      const rug = cylinder(g, 3.0, 0.02, 0xf2b6c0, 0, 0.012, 0.1, 40);
-      rug.scale.set(1.9, 1, 0.55);
-      rug.receiveShadow = true;
-      loungeSign = pill('Khu nghỉ', 1.0);
-      loungeSign.paint('Khu nghỉ', '#e86f8f', 'dark');
-      loungeSign.sprite.position.set(tile.x, 2.7, tile.z + tile.d / 2 - 0.4);
-      scene.add(loungeSign.sprite);
-    } else if (tile.id === 'lobby') {
-      const rug = cylinder(g, 2.6, 0.02, 0xb9d6d2, 0, 0.012, 0.6, 32);
-      rug.scale.set(1.5, 1, 0.55);
-      sign(tile, 'Sảnh lễ tân', '#6cc4c4', 0.9);
-    }
+    if (tile.kind !== 'room' || !dotOf[tile.id]) continue;
+    const door = layout.doors.find((d) => d.room === tile.id && d.kind === 'door');
+    const z = door ? door.z + (door.z < 0 ? -1 : 1) * 1.0 : tile.id === 'pantry' ? tile.z + tile.d / 2 - 0.9 : tile.z + (tile.id === 'lobby' ? 0.5 : 0);
+    const label = tile.id === 'stairs' && layout.floorCount > 1 ? `Cầu thang · ${layout.floorCount} tầng` : tile.label;
+    sign(label, dotOf[tile.id], door ? door.x : tile.x, 2.9, z, tile.id === 'wc' ? 0.7 : 0.85);
+  }
+  for (const zone of layout.zones) sign(`${zone.name}${zone.lead ? ` · ${zone.lead}` : ''}`, hex(TEAM_COLORS[zone.colorIndex % TEAM_COLORS.length]), zone.x, 2.7, zone.z + zone.d / 2 - 0.2, 0.95);
+  sign(`Tầng ${layout.floor + 1}${layout.floorCount > 1 ? ` / ${layout.floorCount}` : ''}`, '#8c7ae6', midX, 4.6, walls.minZ, 1.1);
+  for (const pod of layout.pods) {
+    const zone = layout.zones.find((z) => z.id === pod.zoneId);
+    const color = TEAM_COLORS[(zone?.colorIndex ?? 0) % TEAM_COLORS.length];
+    rbox(scene, 4.4, 0.34, 0.05, tint(0xdfe6f0, 0x6a7088), pod.x, 1.03, pod.z, 0.02);
+    rbox(scene, 4.5, 0.03, 0.07, color, pod.x, 1.22, pod.z, 0.015);
+  }
+  const rest = layout.rooms.find((r) => r.id === 'rest');
+  const loungeSign = pill('Khu nghỉ', 1.0);
+  loungeSign.paint('Khu nghỉ', '#e86f8f', 'dark');
+  loungeSign.sprite.position.set(rest ? rest.x : 0, 2.7, rest ? rest.z - rest.d / 2 + 1.0 : 0);
+  scene.add(loungeSign.sprite);
+
+  // ---------- Đồ đạc ----------
+  const animators: ((t: number) => void)[] = [];
+  const furnitureOf = new Map<string, THREE.Group>();
+  for (const o of layout.furniture) {
+    const f = furniture3d(kit, scene, o);
+    furnitureOf.set(o.id, f.group);
+    if (f.animate) animators.push(f.animate);
   }
 
-  for (const o of layout.furniture) furniture3d(kit, layout, scene, o);
+  // ---------- Đồ trang trí treo tường và dẹt trên sàn ----------
+  const tvMats: THREE.MeshStandardMaterial[] = [];
+  const clockHands: { hour: THREE.Mesh; minute: THREE.Mesh; second: THREE.Mesh }[] = [];
+  const decorate = (d: Decor) => {
+    if (d.kind === 'logo') {
+      const logo = pill('My Company', 1.1);
+      logo.paint('My Company', '#8c7ae6', 'dark');
+      logo.sprite.position.set(d.x, d.y, d.z);
+      scene.add(logo.sprite);
+      return;
+    }
+    const g = new THREE.Group();
+    g.position.set(d.x, d.y, d.z);
+    g.rotation.y = d.facing;
+    scene.add(g);
+    if (d.kind === 'frame') {
+      rbox(g, d.w, d.h, 0.05, 0xf4efe8, 0, 0, 0.03, 0.015);
+      rbox(g, d.w - 0.1, d.h - 0.1, 0.055, d.color, 0, 0, 0.035, 0.01);
+      rbox(g, (d.w - 0.1) * 0.5, (d.h - 0.1) * 0.35, 0.06, mixColor(d.color, 0xffffff, 0.45), -0.06, 0.04, 0.04, 0.01);
+    } else if (d.kind === 'tv') {
+      rbox(g, d.w, d.h, 0.06, 0x20242f, 0, 0, 0.04, 0.02);
+      const m = track(new THREE.MeshStandardMaterial({ color: 0x151a26, emissive: 0x6fb7e8, emissiveIntensity: 0.05, roughness: 0.25 }));
+      tvMats.push(m);
+      const screen = new THREE.Mesh(track(new THREE.PlaneGeometry(d.w - 0.1, d.h - 0.1)), m);
+      screen.position.set(0, 0, 0.075);
+      g.add(screen);
+    } else if (d.kind === 'board') {
+      rbox(g, d.w, d.h, 0.05, 0x8a94a8, 0, 0, 0.03, 0.015);
+      rbox(g, d.w - 0.08, d.h - 0.08, 0.055, 0xfafbfd, 0, 0, 0.035, 0.01);
+      rbox(g, d.w * 0.5, 0.025, 0.06, 0xa8b2c4, -d.w * 0.12, d.h * 0.2, 0.04, 0.005);
+      rbox(g, d.w * 0.25, 0.18, 0.06, d.color, d.w * 0.22, -d.h * 0.12, 0.04, 0.01);
+    } else if (d.kind === 'clock') {
+      const face = cylinder(g, d.w / 2, 0.06, 0xfffdf5, 0, 0, 0.03, 32);
+      face.rotation.x = Math.PI / 2;
+      const rim = cylinder(g, d.w / 2 + 0.03, 0.05, cap, 0, 0, 0.02, 32);
+      rim.rotation.x = Math.PI / 2;
+      for (let i = 0; i < 12; i += 1) {
+        const a = (i / 12) * Math.PI * 2;
+        rbox(g, 0.025, i % 3 === 0 ? 0.08 : 0.04, 0.012, 0x2a2540, Math.sin(a) * d.w * 0.4, Math.cos(a) * d.w * 0.4, 0.066, 0.004).rotation.z = -a;
+      }
+      const hand = (len: number, w: number, color: number, z: number) => {
+        const pivot = new THREE.Group();
+        pivot.position.set(0, 0, z);
+        g.add(pivot);
+        const m = rbox(pivot, w, len, 0.012, color, 0, len / 2 - 0.02, 0, 0.004);
+        return { pivot, m };
+      };
+      const h = hand(d.w * 0.26, 0.03, 0x2a2540, 0.07);
+      const mi = hand(d.w * 0.38, 0.022, 0x2a2540, 0.075);
+      const se = hand(d.w * 0.42, 0.01, 0xd6313f, 0.08);
+      clockHands.push({ hour: h.pivot as unknown as THREE.Mesh, minute: mi.pivot as unknown as THREE.Mesh, second: se.pivot as unknown as THREE.Mesh });
+    } else if (d.kind === 'mat') {
+      rbox(g, d.w, 0.025, d.h, d.color, 0, 0, 0, 0.008);
+      rbox(g, d.w - 0.2, 0.03, d.h - 0.2, mixColor(d.color, 0xffffff, 0.15), 0, 0, 0, 0.008);
+    }
+  };
+  for (const d of layout.decor) decorate(d);
 
-  void cylinder;
-  return { loungeSign: loungeSign ?? pill('Khu nghỉ', 1), beacon, boardNotes, keyLight, ownerRig: ownerRig ?? createChibi(lookFor('Chủ', '#f2c14e', { crown: true, director: false }), kit) };
+  // ---------- Bàn và nhân vật của Chủ (tầng 1) ----------
+  let beacon: THREE.Mesh | null = null;
+  let ownerRig: ReturnType<typeof createChibi> | null = null;
+  if (layout.floor === 0 && layout.rooms.some((r) => r.id === 'owner')) {
+    const owner = createChibi(lookFor('Chủ', '#f2c14e', { crown: true, director: false }), kit);
+    owner.root.position.set(layout.owner.x, 0.06, layout.owner.z);
+    owner.root.rotation.y = 0;
+    owner.setPose({ action: 'type', seated: true, t: 0, phase: 1, motion: false });
+    scene.add(owner.root);
+    ownerRig = owner;
+    beacon = new THREE.Mesh(track(new THREE.SphereGeometry(0.2, 14, 12)), track(new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xfacc15, emissiveIntensity: 1 })));
+    beacon.position.set(layout.owner.x, 2.5, layout.owner.z + 0.3);
+    beacon.visible = false;
+    scene.add(beacon);
+  }
+
+  // ---------- Bảng của Giám đốc: các mảnh giấy hiện dần khi lập kế hoạch ----------
+  const boardNotes: THREE.Mesh[] = [];
+  const board = layout.furniture.find((o) => o.id === 'director-board');
+  if (board) {
+    layout.zones.slice(0, 4).forEach((zone, i) => {
+      const note = rbox(scene, 0.34, 0.26, 0.03, TEAM_COLORS[zone.colorIndex % TEAM_COLORS.length], board.x - 0.55 + i * 0.37, 1.5, board.z + 0.1, 0.012);
+      note.visible = false;
+      boardNotes.push(note);
+    });
+  }
+
+  // ---------- Hơi nước từ máy pha cà phê ----------
+  const steam: THREE.Mesh[] = [];
+  const steamMat = track(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
+  for (let i = 0; i < 4; i += 1) {
+    const puff = new THREE.Mesh(track(new THREE.SphereGeometry(0.07, 8, 6)), steamMat);
+    puff.visible = false;
+    scene.add(puff);
+    steam.push(puff);
+  }
+
+  const tick = (t: number, state: WorldState): boolean => {
+    for (const fn of animators) fn(t);
+    const now = new Date();
+    const sec = now.getSeconds() + now.getMilliseconds() / 1000;
+    const min = now.getMinutes() + sec / 60;
+    const hr = (now.getHours() % 12) + min / 60;
+    for (const c of clockHands) {
+      c.second.rotation.z = -(sec / 60) * Math.PI * 2;
+      c.minute.rotation.z = -(min / 60) * Math.PI * 2;
+      c.hour.rotation.z = -(hr / 12) * Math.PI * 2;
+    }
+    for (const m of tvMats) {
+      m.emissiveIntensity = state.meeting ? 0.55 + 0.25 * Math.sin(t * 0.8) : 0.05;
+      m.emissive.setHex(state.meeting ? ([0x6fb7e8, 0x9b8cf0, 0x6fd6a8][Math.floor(t / 4) % 3]) : 0x6fb7e8);
+    }
+    steam.forEach((puff, i) => {
+      puff.visible = state.pantry;
+      if (!state.pantry) return;
+      const k = (t * 0.55 + i * 0.25) % 1;
+      puff.position.set(layout.coffee.x - 0.5 + 0.05 * Math.sin(t * 2 + i), 1.5 + k * 0.7, layout.coffee.z + 0.15);
+      puff.scale.setScalar(0.6 + k * 1.2);
+    });
+    // Còn động: kim giây, đèn nhấp nháy... đều rất nhẹ; chỉ cần vẽ lại mỗi giây một lần nên không ép vòng lặp chạy liên tục.
+    return state.pantry || state.meeting;
+  };
+
+  return { loungeSign, beacon, boardNotes, keyLight, ownerRig, tick };
 }

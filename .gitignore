@@ -1,0 +1,9 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+*.log
+
+# Dữ liệu và cấu hình riêng của từng dự án (mục 3.7 của KE-HOACH.md)
+data/
+local/

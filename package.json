@@ -1,0 +1,42 @@
+{
+  "name": "my-company",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Công ty ảo chạy bằng Claude Code (gói Pro), chia team, có văn phòng 3D",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "my-company": "bin/cli.mjs"
+  },
+  "scripts": {
+    "init": "node bin/cli.mjs init",
+    "start": "node bin/cli.mjs start",
+    "dev": "node bin/cli.mjs start --dev",
+    "doctor": "node bin/cli.mjs doctor",
+    "pin": "node bin/cli.mjs pin",
+    "skills": "node bin/cli.mjs skills",
+    "build": "next build",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.mjs\""
+  },
+  "dependencies": {
+    "next": "^16.4.5",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "three": "^0.187.0",
+    "web-push": "^3.6.7",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.187.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.4.5",
+    "typescript": "^5.9.0"
+  }
+}

@@ -4,6 +4,12 @@ next-env.d.ts
 *.tsbuildinfo
 *.log
 
-# Dữ liệu và cấu hình riêng của từng dự án (mục 3.7 của KE-HOACH.md)
+# Dữ liệu và cấu hình riêng của từng dự án
 data/
 local/
+
+# Kế hoạch làm việc riêng (giữ trên máy, không đưa lên repo)
+KE-HOACH.md
+
+# Ảnh chụp thử ở thư mục gốc
+/undefined-*.png

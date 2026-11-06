@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { sanitizedEnv, shorten } from './guard.mjs';
 
 /**
- * Tự đánh giá độ khó của một việc để chọn model (mục 3.8 của KE-HOACH.md).
+ * Tự đánh giá độ khó của một việc để chọn model.
  * Dùng một lần gọi `haiku` rất nhỏ: không công cụ, một lượt, chỉ đọc mô tả việc.
  * Sau này Trưởng nhóm sẽ tự gán độ khó khi chia việc; đây là bản thay thế khi chưa có Trưởng nhóm.
  * Mọi lỗi đều quay về mức "normal" để việc vẫn chạy.

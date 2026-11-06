@@ -2,6 +2,7 @@
   "name": "my-company",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Công ty ảo chạy bằng Claude Code (gói Pro), chia team, có văn phòng 3D",
   "engines": {

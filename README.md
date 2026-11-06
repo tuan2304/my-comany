@@ -1,32 +1,105 @@
 # My Company
 
-Công ty ảo chạy bằng Claude Code (gói Pro). Bạn giao việc, các "nhân viên" (mỗi người một tiến trình `claude -p` với vai trò, model và skill riêng) làm trong nhánh git riêng, bạn xem kết quả trên giao diện web. Kế hoạch đầy đủ nằm trong [KE-HOACH.md](KE-HOACH.md).
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Tình trạng:** giai đoạn 0 đến 5 đã xong: giao việc lẻ cho một nhân viên, giao **việc lớn cho một team** (Trưởng nhóm chia việc, duyệt bài, gộp nhánh), hoặc giao **yêu cầu cho cả công ty** (Giám đốc chốt hợp đồng và chia việc cho ba team). Có **văn phòng 3D sống** (tab "Văn phòng 3D"): mỗi người một nhân vật, đi lại theo việc đang làm, giấy bay giữa các bàn khi việc được giao hay nộp, đèn và chồng giấy trên bàn cho biết ai rảnh, ai quá tải; tab báo số việc chờ bạn quyết và có tiếng chuông.
+Công ty ảo chạy bằng Claude Code (gói Pro). Bạn giao việc, các "nhân viên" (mỗi người một tiến trình `claude -p` với vai trò, model và skill riêng) làm trong nhánh git riêng, bạn xem kết quả trên giao diện web.
+
+![Văn phòng 3D đang làm việc](docs/images/van-phong-chay.gif)
+
+*Văn phòng 3D chạy thật: nhân viên đi đọc code ở thư viện, vào phòng server chạy lệnh, giấy bay giữa các bàn khi việc được giao và nộp. (Ảnh chụp với Claude giả, để minh họa mà không tốn hạn mức.)*
+
+Giao **việc lẻ** cho một nhân viên, **việc lớn** cho một team (Trưởng nhóm chia việc, duyệt bài, gộp nhánh), hoặc **yêu cầu cho cả công ty** (Giám đốc chốt hợp đồng chung và chia việc cho các team). Không có gì được push lên git: bạn xem kết quả rồi tự quyết.
 
 ## Yêu cầu
 
 - Node.js 22.13 trở lên, git, Claude Code đã đăng nhập bằng tài khoản **claude.ai gói Pro**.
 - Không cần và không dùng khóa API. Công cụ gỡ `ANTHROPIC_API_KEY` khỏi mọi tiến trình `claude` nó chạy.
 
-## Cài vào một dự án
+## Bắt đầu nhanh
+
+**Bước 1. Cài vào dự án của bạn.** Dự án phải là git repo và đã có ít nhất một commit.
 
 ```
-cd <thư mục dự án của bạn>          # phải là git repo và đã có ít nhất một commit
-git clone <repo này> .my-company
+cd <thư mục dự án của bạn>
+git clone https://github.com/tuan2304/my-comany.git .my-company
 cd .my-company
 npm install
-npm run init                        # ẩn công cụ khỏi git của dự án, tạo local/project.md (bản nháp)
+npm run init
 ```
 
-Mở `local/project.md`, sửa cho đúng (công nghệ, thư mục của từng team, lệnh được phép), rồi:
+`npm run init` ẩn công cụ khỏi git của dự án và tạo `local/project.md` (bản nháp hồ sơ dự án).
+
+**Bước 2. Sửa hồ sơ dự án.** Mở `local/project.md`, ghi đúng công nghệ, thư mục mỗi team được sửa (`folders`), và các lệnh nhân viên được chạy (`allowed_commands`, ví dụ `npm test`). Chưa khai lệnh thì nhân viên không chạy được lệnh nào.
+
+**Bước 3. Kiểm tra môi trường.**
 
 ```
-npm run doctor                      # kiểm tra môi trường
-npm run start                       # mở http://localhost:4310
+npm run doctor
 ```
 
-Gốc dự án là thư mục cha của `.my-company/`. Chạy công cụ ở chỗ khác thì thêm `--project <thư mục>` hoặc đặt `COMPANY_PROJECT_ROOT`.
+Mọi dòng phải đạt (có `claude` trong PATH, đã đăng nhập, `node` trong PATH cho hook chặn thư mục...).
+
+**Bước 4. Chạy.**
+
+```
+npm run start
+```
+
+Mở http://localhost:4310. Gốc dự án là thư mục cha của `.my-company/`; chạy ở chỗ khác thì thêm `--project <thư mục>` hoặc đặt `COMPANY_PROJECT_ROOT`.
+
+## Cách dùng từng bước
+
+Ví dụ: bạn muốn thêm tính năng đăng nhập bằng email.
+
+### 1. Giao yêu cầu
+
+Tab **Công việc**, chọn **Yêu cầu cho công ty**. Điền tiêu đề, mô tả điều bạn muốn và tiêu chí hoàn thành, rồi bấm **Giao cho Giám đốc**. (Việc nhỏ chỉ cần một team hoặc một người thì chọn **Việc lớn cho 1 team** hoặc **Việc lẻ**; có thể bấm **Dùng mẫu có sẵn** để điền nhanh.)
+
+![Form giao yêu cầu](docs/images/01-giao-viec.png)
+
+### 2. Duyệt kế hoạch (điểm dừng 1)
+
+Giám đốc đọc code, chốt hợp đồng chung (đường dẫn API, dữ liệu vào ra, mã lỗi) và chia việc cho các team. **Chưa duyệt thì chưa ai làm gì.** Đọc kế hoạch rồi bấm **Duyệt kế hoạch**, hoặc ghi nhận xét và bấm **Từ chối, lập lại** (Giám đốc lập lại, tối đa 2 lần).
+
+![Kế hoạch chờ duyệt](docs/images/02-duyet-ke-hoach.png)
+
+### 3. Xem công ty làm việc
+
+Sang tab **Văn phòng**. Mỗi nhân viên chạy trong worktree và nhánh git riêng; trên màn hình bạn thấy ai đang đọc code, chạy lệnh, sửa file, chờ duyệt bài. Nút **3D | 2D** đổi kiểu vẽ. Bấm vào một người để xem việc của họ.
+
+![Văn phòng 3D](docs/images/03-van-phong-3d.png)
+
+![Văn phòng 2D](docs/images/04-van-phong-2d.png)
+
+Các tab khác cho cùng dữ liệu theo cách khác: **Bảng kanban**, **Tải của team**, **Nhật ký hội thoại** giữa các tầng.
+
+### 4. Duyệt kết quả (điểm dừng 2)
+
+Khi mọi team xong, kết quả được ghép vào nhánh `company/epic<số>`. Giám đốc đọc code, chạy test và báo cáo. Bạn xem báo cáo, bấm **Duyệt kết quả** hoặc **Không duyệt** (kèm lý do).
+
+![Duyệt kết quả](docs/images/05-duyet-ket-qua.png)
+
+### 5. Lấy kết quả về dự án
+
+Công cụ **không bao giờ push**. Xem thay đổi và gộp bằng git như bình thường:
+
+```
+git diff main company/epic<số>        # xem
+git merge company/epic<số>            # lấy về nếu ưng ý
+```
+
+(Việc lớn dùng nhánh `company/job<số>`, việc lẻ dùng `company/<tên>-task<số>`.)
+
+### Khi có thứ cần bạn
+
+Khối **Cần bạn quyết** ở đầu trang liệt kê kế hoạch hoặc kết quả đang chờ, việc có xung đột hay vượt giới hạn. Tiêu đề tab hiện số việc chờ và có tiếng chuông nhẹ. Hết hạn mức Pro thì cả công ty nghỉ, tới giờ hạn mức hồi thì tự làm tiếp.
+
+| | |
+|---|---|
+| ![Bảng kanban](docs/images/06-bang-kanban.png) | ![Báo cáo tuần](docs/images/09-bao-cao-tuan.png) |
+| Bảng kanban | Báo cáo tuần (không tốn hạn mức) |
+| ![Mẫu và lịch](docs/images/10-mau-va-lich.png) | ![Trên điện thoại](docs/images/11-dien-thoai.png) |
+| Mẫu việc và việc định kỳ | Duyệt việc từ điện thoại ([hướng dẫn](#dùng-từ-xa-bằng-điện-thoại-tailscale--pin)) |
 
 ## Cách hoạt động
 
@@ -190,3 +263,9 @@ npm run lint
 npm run typecheck
 npm run dev       # giao diện chạy chế độ phát triển
 ```
+
+## Giấy phép
+
+Mã nguồn của dự án này phát hành theo [giấy phép MIT](LICENSE): bạn được dùng, sửa, phân phối và dùng cho mục đích thương mại, miễn là giữ nguyên thông báo bản quyền.
+
+Các skill trong `skills/library/` là của tác giả gốc và **giữ giấy phép riêng** của họ (Apache-2.0, MIT, CC BY-SA 4.0 như bảng ở mục "Skill từ GitHub"). Giấy phép MIT của dự án không áp dụng cho các skill đó.

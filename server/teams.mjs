@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readFrontmatterFile } from './frontmatter.mjs';
 
-// Model người dùng đã quyết định không dùng (mục 3.8 của KE-HOACH.md).
+// Model người dùng đã quyết định không dùng.
 const BLOCKED_MODELS = ['fable'];
 
 const DEFAULT_LIMITS = {

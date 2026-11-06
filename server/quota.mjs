@@ -1,5 +1,5 @@
 /**
- * Nhận ra khi gói Pro hết hạn mức (mục 4.4 của KE-HOACH.md).
+ * Nhận ra khi gói Pro hết hạn mức.
  *
  * Nguồn tín hiệu chính là sự kiện `rate_limit_event` trong luồng stream-json,
  * có dạng (đã quan sát thật trên Claude Code 2.1.308):

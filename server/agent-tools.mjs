@@ -1,5 +1,5 @@
 /**
- * Công cụ của công ty cấp cho Trưởng nhóm và Giám đốc qua MCP (mục 4.1 của KE-HOACH.md). Agent không tự do
+ * Công cụ của công ty cấp cho Trưởng nhóm và Giám đốc qua MCP. Agent không tự do
  * gọi nhau: mọi giao việc và duyệt bài đều đi qua các công cụ này, nên được ghi lại, kiểm soát
  * (giới hạn tải, trùng phạm vi, số lần trả bài, đợt làm lại) và hiện lên giao diện.
  *

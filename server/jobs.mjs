@@ -4,7 +4,7 @@ import { findMember, workersOf } from './teams.mjs';
 import { branchDiff, checkRepo, integrateBranches, resolveRef } from './worktree.mjs';
 
 /**
- * Điều phối việc lớn (job) của một team (mục 3.4 của KE-HOACH.md):
+ * Điều phối việc lớn (job) của một team:
  *   Chủ giao việc lớn → Trưởng nhóm lập kế hoạch (chia việc con bằng công cụ) → nhân viên làm song song
  *   → mỗi bài nộp được Trưởng nhóm duyệt hoặc trả lại → gộp các nhánh đã duyệt → báo cáo.
  * Mọi quy tắc cứng (giới hạn tải, trùng phạm vi, số lần trả bài) do máy chủ ép trong file này.

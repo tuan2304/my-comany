@@ -1,5 +1,5 @@
 /**
- * Các biện pháp bảo vệ dùng chung (mục 4.4 và 6 của KE-HOACH.md):
+ * Các biện pháp bảo vệ dùng chung:
  * - không để tiến trình `claude` vô tình dùng API tính tiền;
  * - che secret trước khi lưu hoặc hiển thị.
  */

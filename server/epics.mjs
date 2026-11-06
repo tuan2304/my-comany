@@ -4,7 +4,7 @@ import { findMember, workersOf } from './teams.mjs';
 import { checkRepo, integrateBranches, resolveRef } from './worktree.mjs';
 
 /**
- * Yêu cầu của chủ giao cho cả công ty (mục 3.4 và 3.5 của KE-HOACH.md):
+ * Yêu cầu của chủ giao cho cả công ty:
  *   Chủ giao yêu cầu → Giám đốc lập kế hoạch (hợp đồng chung + việc cho từng team, có phụ thuộc)
  *   → [Chủ duyệt kế hoạch] → các team làm (Backend và Frontend song song, Chất lượng sau) → ghép kết quả
  *   → Giám đốc kiểm tra (được giao làm lại tối đa một đợt) → [Chủ duyệt kết quả] → hoàn thành.

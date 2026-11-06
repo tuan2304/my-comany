@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 /**
- * Skill từ GitHub (mục 3.8 của KE-HOACH.md): chỉ skill đã được duyệt và ghi vào
+ * Skill từ GitHub: chỉ skill đã được duyệt và ghi vào
  * skills.lock mới được nạp. Mỗi skill nằm trong skills/library/<tên>/.
  */
 

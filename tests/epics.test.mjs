@@ -332,9 +332,9 @@ test('tạo yêu cầu: kiểm tra đầu vào, danh sách công cụ theo loạ
   const names = (kind) => toolsForKind(kind).map((t) => t.name).sort();
   assert.deepEqual(names('dplan'), ['create_team_job', 'get_company_overview', 'set_contract']);
   assert.deepEqual(names('dreview'), ['create_team_job', 'finish_epic', 'get_company_overview']);
-  assert.deepEqual(names('plan'), ['assign_to_member', 'get_team_workload']);
+  assert.deepEqual(names('plan'), ['assign_contest', 'assign_to_member', 'get_team_workload']);
   assert.deepEqual(names('review'), ['review_submission']);
-  assert.deepEqual(names('work'), ['ask_colleague', 'ask_lead', 'call_meeting']);
+  assert.deepEqual(names('work'), ['ask_colleague', 'ask_lead', 'ask_owner', 'call_meeting']);
   assert.deepEqual(names('answer'), [], 'lượt trả lời không có công cụ MCP nào');
 });
 

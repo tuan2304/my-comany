@@ -54,12 +54,6 @@ export function block(g: G, fill: string, x: number, y: number, w: number, h: nu
   rect(g, lighten(fill, 0.12), x + 1, y + 1, 1, h - 2);
 }
 
-/** Bo tròn bốn góc của một khối (xóa pixel góc). Dùng cho thảm, sofa, bàn. */
-export function roundCorners(g: G, base: string, x: number, y: number, w: number, h: number) {
-  g.fillStyle = base;
-  for (const [cx, cy] of [[x, y], [x + w - 1, y], [x, y + h - 1], [x + w - 1, y + h - 1]]) g.fillRect(Math.round(cx), Math.round(cy), 1, 1);
-}
-
 const BOOKS = ['#e0525f', '#4a86d9', '#4cbf86', '#f5a742', '#9b6df0', '#2cb5a6'];
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -127,10 +121,6 @@ export function chairTop(g: G, cx: number, cy: number, dirX: number, dirY: numbe
 // ---------------------------------------------------------------------------------------------------------------
 // Đồ đạc
 // ---------------------------------------------------------------------------------------------------------------
-
-export interface FurnitureLook {
-  teamHex?: string;
-}
 
 /** Vẽ một món đồ (tĩnh) tại tâm (cx, cy) pixel. Phần hoạt hình (cá, đèn nhấp nháy...) vẽ riêng ở bộ vẽ chính. */
 export function drawFurniture(g: G, o: Obstacle, cx: number, cy: number) {

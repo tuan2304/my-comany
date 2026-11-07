@@ -5,16 +5,19 @@ effort: medium
 tools: [Read, Grep, Glob, Edit, Write, Bash]
 max_turns: 30
 timeout_minutes: 20
-# `agent-desktop` và `agent-desktop-windows` đã được duyệt và nằm trong thư viện nhưng KHÔNG nạp mặc định: đó là hướng dẫn cho một chương trình
-# dòng lệnh bên ngoài điều khiển giao diện máy tính thật (nhấp, gõ phím, đọc cửa sổ của mọi ứng dụng đang mở), mà nhân viên không được
-# phép chạy. Chỉ cân nhắc khi dự án là ứng dụng desktop: cài chương trình agent-desktop, cho phép lệnh `agent-desktop` trong
-# allowed_commands của local/project.md, rồi thêm tên skill vào danh sách bên dưới.
-# `webapp-testing` đã được duyệt và nằm trong thư viện nhưng KHÔNG nạp mặc định: script with_server.py chạy lệnh shell tùy ý
-# mà agent đưa vào, nên cho phép nó là mở toang danh sách lệnh được phép. Muốn dùng, hãy tự cân nhắc rồi thêm vào đây.
+# Theo quyết định của chủ công ty (7/11/2026), QA nạp cả ba skill sau dù chúng rộng quyền hơn các skill khác:
+# - `agent-desktop`, `agent-desktop-windows`: hướng dẫn một chương trình dòng lệnh bên ngoài điều khiển giao diện máy tính thật
+#   (nhấp, gõ phím, đọc cửa sổ của mọi ứng dụng đang mở).
+# - `webapp-testing`: script with_server.py chạy lệnh shell tùy ý mà agent đưa vào.
+# Nạp skill chỉ đưa hướng dẫn cho agent, KHÔNG tự cấp quyền chạy lệnh: QA chỉ chạy được những lệnh Bash nằm trong allowed_commands của
+# local/project.md. Muốn dùng thật thì cài chương trình `agent-desktop` (hoặc Python + Playwright) rồi thêm đúng các lệnh đó vào allowed_commands.
 skills:
   - test-driven-development
   - systematic-debugging
   - verification-before-completion
+  - webapp-testing
+  - agent-desktop
+  - agent-desktop-windows
 stack_skills:
   supabase: [supabase]
 stack_notes:

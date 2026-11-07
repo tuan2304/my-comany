@@ -5,6 +5,9 @@ import {
   formatClock, formatCountdown, formatDuration, formatTokens, KIND_LABEL, LEVEL_LABEL, STATUS_LABEL, TASK_KIND_LABEL,
 } from '@/lib/format';
 import type { Task, TaskEvent } from '@/lib/types';
+import FailurePanel from './FailurePanel';
+import IntegratePanel from './IntegratePanel';
+import OwnerQuestionPanel from './OwnerQuestionPanel';
 
 interface Props {
   task: Task | null;
@@ -67,6 +70,12 @@ export default function TaskDetail({ task, events, now, onStop }: Props) {
         {task.escalations > 0 ? ` Đã được nâng model ${task.escalations} lần vì việc chưa xong.` : ''}
       </p>
       {task.error && task.status !== 'stopped' && <p className="error">{task.error}</p>}
+      {task.kind === 'work' && task.status === 'waiting_answer' && task.ask_owner_id !== null && (
+        <OwnerQuestionPanel key={task.ask_owner_id} questionId={task.ask_owner_id} asker={task.member} />
+      )}
+      {task.kind !== 'answer' && task.status === 'failed' && (
+        <FailurePanel key={`${task.id}:${task.recoveries}:${task.finished_at ?? 0}`} task={task} />
+      )}
 
       <dl className="meta">
         <div><dt>Nhánh</dt><dd>{task.branch ?? '—'}</dd></div>
@@ -95,6 +104,9 @@ export default function TaskDetail({ task, events, now, onStop }: Props) {
           <ul className="files">{files.map((f) => <li key={f}>{f}</li>)}</ul>
           <p className="muted">Nằm trên nhánh {task.branch}, chưa push. Xem bằng <code>git diff {task.branch}</code>.</p>
         </section>
+      )}
+      {task.kind === 'work' && task.job_id === null && task.epic_id === null && task.status === 'done' && (
+        <IntegratePanel key={`${task.id}:${task.finished_at ?? 0}`} kind="task" id={task.id} />
       )}
 
       <section>

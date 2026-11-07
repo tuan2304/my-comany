@@ -107,24 +107,44 @@ export function formatCountdown(ms: number): string {
 }
 
 export interface OwnerRequest {
-  kind: 'epic' | 'job';
+  kind: 'epic' | 'job' | 'task';
   id: number;
   title: string;
   status: string;
-  /** Người đang đợi bạn (Giám đốc của yêu cầu, hoặc Trưởng nhóm của việc lớn). */
+  /** Người đang đợi bạn (Giám đốc của yêu cầu, Trưởng nhóm của việc lớn, hoặc nhân viên có việc bị lỗi). */
   who: string;
 }
 
-/** Những thứ đang chờ chính bạn: duyệt kế hoạch, duyệt kết quả, hoặc việc cần bạn xem (xung đột, vượt giới hạn). */
-export function ownerRequests(epics: Pick<Epic, 'id' | 'title' | 'status' | 'director'>[], jobs: Pick<Job, 'id' | 'title' | 'status' | 'lead' | 'epic_id'>[]): OwnerRequest[] {
+// Việc lớn đã kết thúc thì không xử lý riêng từng việc con nữa (giống JOB_TERMINAL ở server/jobs.mjs).
+const JOB_FINISHED = new Set(['done', 'attention', 'failed', 'stopped']);
+
+/** Những thứ đang chờ chính bạn: duyệt kế hoạch, duyệt kết quả, việc cần bạn xem (xung đột, vượt giới hạn), hoặc việc bị lỗi cần bạn chọn cách xử lý. */
+export function ownerRequests(
+  epics: Pick<Epic, 'id' | 'title' | 'status' | 'director'>[],
+  jobs: Pick<Job, 'id' | 'title' | 'status' | 'lead' | 'epic_id'>[],
+  tasks: Pick<Task, 'id' | 'title' | 'status' | 'member' | 'kind' | 'job_id' | 'epic_id' | 'ask_owner_id'>[] = [],
+): OwnerRequest[] {
   const out: OwnerRequest[] = [];
   for (const e of epics) {
-    if (e.status === 'awaiting_plan' || e.status === 'awaiting_result' || e.status === 'attention') {
+    if (e.status === 'awaiting_plan' || e.status === 'awaiting_result' || e.status === 'attention' || e.status === 'failed') {
       out.push({ kind: 'epic', id: e.id, title: e.title, status: e.status, who: e.director });
     }
   }
   for (const j of jobs) {
-    if (j.epic_id === null && j.status === 'attention') out.push({ kind: 'job', id: j.id, title: j.title, status: j.status, who: j.lead });
+    // Việc lớn lẻ "cần xem" hoặc "lỗi": chủ còn cứu được (xử lý việc con lỗi, hoặc cho Trưởng nhóm lập kế hoạch lại).
+    if (j.epic_id === null && (j.status === 'attention' || j.status === 'failed')) out.push({ kind: 'job', id: j.id, title: j.title, status: j.status, who: j.lead });
+    // Thi đấu skill: hai bản đã nộp và chụp ảnh xong, chờ chủ chọn (bấm vào Trưởng nhóm).
+    if (j.status === 'awaiting_choice') out.push({ kind: 'job', id: j.id, title: j.title, status: j.status, who: j.lead });
+  }
+  // Việc "làm" cần chủ: bị lỗi (chọn cách xử lý) hoặc đang hỏi chủ một câu (ask_owner). Chỉ tính việc lẻ, hoặc việc con của
+  // một việc lớn còn đang chạy (chủ còn kịp cứu trước khi việc lớn kết thúc).
+  const openJobs = new Set(jobs.filter((j) => !JOB_FINISHED.has(j.status)).map((j) => j.id));
+  for (const t of tasks) {
+    if (t.kind !== 'work') continue;
+    const status = t.status === 'failed' ? 'failed' : t.status === 'waiting_answer' && t.ask_owner_id != null ? 'asking' : null;
+    if (!status) continue;
+    const own = t.job_id == null ? t.epic_id == null : openJobs.has(t.job_id);
+    if (own) out.push({ kind: 'task', id: t.id, title: t.title, status, who: t.member });
   }
   return out;
 }

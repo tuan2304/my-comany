@@ -32,9 +32,9 @@ export default function Board({ tasks, teams, onSelect }: Props) {
   );
 
   return (
-    <div className="card">
+    <div>
       <div className="detail-head">
-        <h2>Bảng kanban ({shown.length} việc)</h2>
+        <p className="muted">{shown.length} việc của nhân viên</p>
         <div className="actions">
           <select value={team} onChange={(e) => { setTeam(e.target.value); setMember(''); }} aria-label="Lọc theo team">
             <option value="">Mọi team</option>

@@ -2,6 +2,8 @@
 
 import { JOB_STATUS_LABEL, STATUS_LABEL, TASK_KIND_LABEL } from '@/lib/format';
 import type { Job, Task } from '@/lib/types';
+import ContestPanel from './ContestPanel';
+import IntegratePanel from './IntegratePanel';
 
 interface Props {
   job: Job;
@@ -9,6 +11,8 @@ interface Props {
   selectedTaskId: number | null;
   onSelectTask: (id: number) => void;
   onStop: (id: number) => void;
+  /** Cho Trưởng nhóm lập kế hoạch lại (việc lớn lỗi mà chưa có việc con nào). */
+  onReplan: (id: number) => void;
 }
 
 function parseList(value: string | null): string[] {
@@ -39,9 +43,11 @@ function TaskRow({ task, selected, onSelect }: { task: Task; selected: boolean; 
   );
 }
 
-export default function JobDetail({ job, tasks, selectedTaskId, onSelectTask, onStop }: Props) {
+export default function JobDetail({ job, tasks, selectedTaskId, onSelectTask, onStop, onReplan }: Props) {
   const plan = tasks.filter((t) => t.kind === 'plan');
   const work = tasks.filter((t) => t.kind === 'work');
+  const failedWork = work.filter((t) => t.status === 'failed');
+  const canReplan = job.status === 'failed' && work.length === 0;
   const reviews = tasks.filter((t) => t.kind === 'review');
   const active = !['done', 'attention', 'failed', 'stopped'].includes(job.status);
   const conflicts = parseList(job.conflict_files);
@@ -65,7 +71,46 @@ export default function JobDetail({ job, tasks, selectedTaskId, onSelectTask, on
           Đã gộp các việc đã duyệt vào nhánh <code>{job.merge_branch}</code> (chưa push). Xem bằng <code>git diff {job.base_commit?.slice(0, 8) ?? 'main'} {job.merge_branch}</code>.
         </p>
       )}
+      {job.contest && (job.status === 'awaiting_choice' || job.status === 'done') && <ContestPanel key={`${job.id}:${job.status}`} jobId={job.id} />}
+      {job.status === 'done' && job.epic_id === null && !job.contest && (
+        <IntegratePanel key={`${job.id}:${job.finished_at ?? 0}`} kind="job" id={job.id} />
+      )}
       {active && <button type="button" className="danger" onClick={() => onStop(job.id)}>Dừng cả việc lớn</button>}
+
+      {canReplan && (
+        <section className="failure" aria-label="Việc lớn bị lỗi">
+          <h3>Trưởng nhóm chưa chia được việc</h3>
+          <p className="why">
+            Lượt lập kế hoạch bị lỗi hoặc không tạo ra việc con nào. Bạn có thể cho {job.lead} lập kế hoạch lại (một lượt mới, các lượt cũ vẫn xem được trong nhật ký).
+            Muốn làm tiếp phiên cũ, nâng model hoặc dặn thêm thì mở lượt lập kế hoạch bị lỗi ở danh sách &ldquo;Lượt của Trưởng nhóm&rdquo; bên dưới.
+            {job.epic_id !== null ? ` Việc lớn này thuộc yêu cầu #${job.epic_id}: yêu cầu sẽ được mở lại để chạy tiếp.` : ''}
+          </p>
+          <div className="actions">
+            <button type="button" onClick={() => onReplan(job.id)}>Cho {job.lead} lập kế hoạch lại</button>
+          </div>
+        </section>
+      )}
+      {failedWork.length > 0 && (job.status === 'attention' || job.status === 'failed' || job.status === 'running') && (
+        <section className="failure" aria-label="Việc con bị lỗi">
+          <h3>Việc con bị lỗi cần bạn quyết ({failedWork.length})</h3>
+          <p className="why">
+            {job.status === 'running'
+              ? 'Các việc con khác vẫn đang chạy, bạn còn kịp cứu việc lỗi trước khi việc lớn kết thúc.'
+              : `Chọn từng việc để làm tiếp, làm lại, nhận phần đã làm hoặc bỏ qua. Việc lớn${job.epic_id !== null ? ` (và yêu cầu #${job.epic_id} chứa nó)` : ''} sẽ được mở lại và gộp lại khi xong.`}
+          </p>
+          <ul className="list-plain">
+            {failedWork.map((t) => (
+              <li key={t.id}>
+                <button type="button" className="row" onClick={() => onSelectTask(t.id)}>
+                  <span className="row-title">#{t.id} {t.title}</span>
+                  <span className="row-sub">{t.member} · {t.error ?? 'bị lỗi'}</span>
+                  <span className="chip status-failed">Xử lý</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section>
         <h3>Việc con ({work.length})</h3>

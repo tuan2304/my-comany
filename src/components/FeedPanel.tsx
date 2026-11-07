@@ -31,9 +31,8 @@ export default function FeedPanel({ signature, onSelectTask }: { signature: stri
   }, [signature]);
 
   return (
-    <div className="card">
-      <h2>Nhật ký hội thoại giữa các tầng</h2>
-      <p className="muted">Mới nhất ở trên. Bấm vào một dòng để xem lượt làm việc đó.</p>
+    <div>
+      <p className="muted">Giao việc, duyệt bài, trả bài và lệnh công cụ giữa các tầng. Mới nhất ở trên; bấm một dòng để xem lượt làm việc đó.</p>
       {error && <p className="error">{error}</p>}
       <ol className="log feed">
         {events.length === 0 && <li className="muted">Chưa có sự kiện.</li>}

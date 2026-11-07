@@ -2,7 +2,32 @@ export type TaskStatus = 'queued' | 'running' | 'paused_quota' | 'waiting_answer
 
 export type TaskKind = 'work' | 'plan' | 'review' | 'dplan' | 'dreview' | 'answer';
 
-export type JobStatus = 'draft' | 'waiting' | 'planning' | 'running' | 'integrating' | 'done' | 'attention' | 'failed' | 'stopped';
+export type JobStatus = 'draft' | 'waiting' | 'planning' | 'running' | 'awaiting_choice' | 'integrating' | 'done' | 'attention' | 'failed' | 'stopped';
+
+/** Thi đấu skill (xem server/contest.mjs). Chưa chọn thì không có tên người và bộ skill của từng phương án (chấm mù). */
+export interface ContestOption {
+  option: number;
+  images: { page: string; src: string }[];
+  shotError: string | null;
+  changedFiles: number;
+  member?: string;
+  label?: string;
+  skills?: string[];
+  report?: string | null;
+  winner?: boolean;
+}
+
+export interface ContestView {
+  jobId: number;
+  title: string;
+  lead: string;
+  jobStatus: JobStatus;
+  status: 'splitting' | 'working' | 'capturing' | 'ready' | 'chosen';
+  hasPreview: boolean;
+  options: ContestOption[];
+  sets?: Record<string, string[]>;
+  winnerSkills?: string[];
+}
 
 export type EpicStatus =
   | 'planning' | 'awaiting_plan' | 'running' | 'integrating' | 'reviewing'
@@ -81,6 +106,8 @@ export interface Job {
   plan_task_id: number | null;
   epic_id: number | null;
   depends_on: string | null;
+  /** Có giá trị khi đây là việc thi đấu skill (JSON); xem ContestView để lấy dữ liệu cho giao diện. */
+  contest?: string | null;
   round: number;
   created_at: number;
   finished_at: number | null;
@@ -107,6 +134,11 @@ export interface Task {
   subject_id: number | null;
   revisions: number;
   review_feedback: string | null;
+  failure_code: string | null;
+  recoveries: number;
+  auto_retries: number;
+  /** Mã câu hỏi đang chờ chủ trả lời (ask_owner), null nếu không có. */
+  ask_owner_id: number | null;
   files: string | null;
   verdict: string | null;
   session_id: string | null;
@@ -279,4 +311,65 @@ export interface WeeklyReport {
     last_seven_day: number | null;
     blocked_events: number;
   };
+}
+
+export type IntegrationState = 'not_ready' | 'missing' | 'integrated' | 'blocked' | 'conflict' | 'ready' | 'failed';
+
+/** Kết quả xem trước "Đưa vào dự án" (GET /api/integrate/...). */
+export interface IntegrationInfo {
+  kind: 'task' | 'job' | 'epic';
+  id: number;
+  title: string | null;
+  branch: string | null;
+  target: string | null;
+  state: IntegrationState;
+  reason: string | null;
+  files: string[];
+  stat: string;
+  conflictFiles: string[];
+  dirtyFiles: string[];
+  integration: { branch: string; target: string; commit_id: string | null; merged_at: number } | null;
+}
+
+export interface FailureOption {
+  /** Hành động với việc/lượt: continue, raise, redo, accept, skip. Riêng yêu cầu còn có proceed (bỏ phần lỗi) và accept (vẫn nhận kết quả). */
+  action: 'continue' | 'raise' | 'redo' | 'accept' | 'skip' | 'proceed';
+  label: string;
+  hint: string;
+  /** Có nhận lời dặn thêm của chủ không: false, 'optional' hoặc 'recommended'. */
+  guidance: false | 'optional' | 'recommended';
+}
+
+/** Chẩn đoán một việc bị lỗi và các phương án xử lý (GET /api/tasks/:id/recovery). */
+export interface FailureInfo {
+  diagnosis: {
+    code: string;
+    title: string;
+    cause: string;
+    recommended: FailureOption['action'] | null;
+    hasWork: boolean;
+    canResume: boolean;
+    recoverable: boolean;
+    blockedReason: string | null;
+    /** Mã việc lớn đã kết luận sẽ được mở lại khi bạn xử lý việc này (null nếu không). */
+    reopensJob: number | null;
+    /** Yêu cầu đã kết luận sẽ được mở lại khi chạy lại lượt của Giám đốc (null nếu không). */
+    reopensEpic: { id: number; kind: 'dplan' | 'dreview' } | null;
+    options: FailureOption[];
+    /** Chỉ có khi chẩn đoán một yêu cầu: các việc của team chưa đạt. */
+    badJobs?: { id: number; title: string; status: string; lead: string; error: string | null }[];
+  };
+  evidence: { ts: number; kind: string; summary: string }[];
+  work: { branch: string; stat: string; patch: string; truncated: boolean } | null;
+}
+
+/** Câu hỏi nhân viên gửi cho chủ công ty (GET /api/questions/:id). */
+export interface OwnerQuestion {
+  id: number;
+  task_id: number;
+  asker: string;
+  text: string;
+  status: 'open' | 'answered' | 'failed';
+  answer: string | null;
+  options: string[];
 }

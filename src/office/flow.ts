@@ -351,13 +351,6 @@ export function planPath(layout: OfficeLayout, _person: PersonSpot, _from: Place
   return out.filter((p, k) => k === 0 || Math.hypot(p.x - out[k - 1].x, p.z - out[k - 1].z) > 1e-6);
 }
 
-/** Chiều dài của đường đi. */
-export function pathLength(path: Pt[]): number {
-  let total = 0;
-  for (let i = 1; i < path.length; i += 1) total += Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z);
-  return total;
-}
-
 function firstHit<T>(path: Pt[], test: (p: Pt) => T | null): T | null {
   for (let i = 1; i < path.length; i += 1) {
     const a = path[i - 1];

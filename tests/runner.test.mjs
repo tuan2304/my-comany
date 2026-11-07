@@ -388,4 +388,8 @@ test('buildClaudeArgs, buildAllowedTools và buildSystemPrompt', () => {
   assert.match(system, /chỉ sửa trong đây\): src\/server/);
   assert.match(system, /của frontend \(không tự ý sửa\): src\/app/);
   assert.match(system, /Không push/);
+  assert.doesNotMatch(system, /Skill của bạn/, 'không có skill nạp thì không có đoạn dặn dùng skill');
+  const withSkills = buildSystemPrompt({ member, team, role, project, skills: ['ponytail', 'verification-before-completion'] });
+  assert.match(withSkills, /## Skill của bạn[\s\S]*- company-skills:ponytail\n- company-skills:verification-before-completion[\s\S]*công cụ Skill/);
+  assert.ok(withSkills.indexOf('## Skill của bạn') < withSkills.indexOf('## Quy tắc bắt buộc'));
 });

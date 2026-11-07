@@ -25,7 +25,7 @@ export function writeNotifyMode(mode: NotifyMode): void {
 
 /** Nội dung thông báo cho một việc chờ bạn. Cùng chữ với thông báo đẩy của máy chủ (tests/push.test.mjs kiểm hai bên khớp nhau). */
 export function notifyMessage(request: { kind: string; id: number; title: string; status: string }): { tag: string; title: string; body: string } {
-  const titles: Record<string, string> = { awaiting_plan: 'Cần bạn duyệt kế hoạch', awaiting_result: 'Cần bạn duyệt kết quả', attention: 'Cần bạn xem' };
+  const titles: Record<string, string> = { awaiting_plan: 'Cần bạn duyệt kế hoạch', awaiting_result: 'Cần bạn duyệt kết quả', attention: 'Cần bạn xem', failed: 'Việc bị lỗi, cần bạn chọn cách xử lý', asking: 'Nhân viên đang hỏi bạn', awaiting_choice: 'Hai bản đã xong, cần bạn chọn' };
   const flat = request.title.replace(/\s+/g, ' ').trim();
   return {
     tag: `${request.kind}:${request.id}:${request.status}`,

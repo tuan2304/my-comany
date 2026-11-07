@@ -31,8 +31,7 @@ export default function TeamLoadPanel({ signature }: { signature: string }) {
   }, [signature]);
 
   return (
-    <div className="card">
-      <h2>Tải của từng team</h2>
+    <div>
       {error && <p className="error">{error}</p>}
       <div className="loadgrid">
         {teams.filter((t) => t.workers.length > 0).map((team) => (

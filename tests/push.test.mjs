@@ -186,7 +186,34 @@ test('quy tắc "việc cần bạn" của máy chủ khớp đúng với giao d
     jobs.push({ id: 100 + i, title: `K${i}`, status, lead: 'Lead', epic_id: 1 });
   });
   assert.deepEqual(ownerRequestsJs(epics, jobs), ownerRequestsTs(epics, jobs));
-  assert.equal(ownerRequestsJs(epics, jobs).length, 4); // 3 yêu cầu + 1 việc lẻ đang attention
+  assert.equal(ownerRequestsJs(epics, jobs).length, 6); // 4 yêu cầu (chờ duyệt kế hoạch, chờ duyệt kết quả, cần xem, lỗi) + 2 việc lẻ (cần xem, lỗi)
+});
+
+test('việc bị lỗi: máy chủ và giao diện cùng một quy tắc (việc lẻ, hoặc việc con của việc lớn còn chạy)', () => {
+  const job = (id, status, epic_id = null) => ({ id, title: `J${id}`, status, lead: 'L', epic_id });
+  const jobs = [job(1, 'running'), job(2, 'attention'), job(3, 'planning'), job(4, 'done'), job(5, 'failed'), job(6, 'stopped'), job(7, 'integrating')];
+  const task = (id, over) => ({ id, title: `T${id}`, status: 'failed', member: 'An', kind: 'work', job_id: null, epic_id: null, ...over });
+  const tasks = [
+    task(1, {}), // việc lẻ lỗi: cần bạn
+    task(2, { status: 'done' }), task(3, { status: 'stopped' }), task(4, { status: 'running' }), // không lỗi
+    task(5, { job_id: 1 }), task(6, { job_id: 3 }), task(7, { job_id: 7 }), // việc con của việc lớn còn chạy: cần bạn
+    task(8, { job_id: 2 }), task(9, { job_id: 4 }), task(10, { job_id: 5 }), task(11, { job_id: 6 }), // việc lớn đã kết thúc: không
+    task(12, { job_id: 999 }), // việc lớn không có trong danh sách: không
+    task(13, { kind: 'review', job_id: 1 }), task(14, { kind: 'plan', job_id: 1 }), task(15, { kind: 'dreview', job_id: null, epic_id: 3 }), // lượt của Trưởng nhóm/Giám đốc: không
+    task(16, { epic_id: 3 }),
+    // Nhân viên đang hỏi chủ (ask_owner): cần bạn trả lời; hỏi Trưởng nhóm/đồng nghiệp (không có ask_owner_id) thì không.
+    task(17, { status: 'waiting_answer', ask_owner_id: 5 }),
+    task(18, { status: 'waiting_answer', ask_owner_id: null }),
+    task(19, { status: 'waiting_answer', ask_owner_id: 6, job_id: 1 }), // việc con của việc lớn còn chạy
+    task(20, { status: 'waiting_answer', ask_owner_id: 7, job_id: 5 }), // việc lớn đã lỗi/kết thúc: không
+    task(21, { status: 'running', ask_owner_id: 8 }), // mới hỏi, chưa kết thúc lượt: chưa tính
+  ];
+  const js = ownerRequestsJs([], jobs, tasks);
+  assert.deepEqual(js, ownerRequestsTs([], jobs, tasks));
+  assert.deepEqual(js.filter((r) => r.kind === 'task').map((r) => [r.id, r.status]), [[1, 'failed'], [5, 'failed'], [6, 'failed'], [7, 'failed'], [17, 'asking'], [19, 'asking']]);
+  assert.deepEqual(js.find((r) => r.kind === 'task'), { kind: 'task', id: 1, title: 'T1', status: 'failed', who: 'An' });
+  // Gọi không có danh sách việc (như trước đây) thì không đổi.
+  assert.deepEqual(ownerRequestsJs([], jobs), ownerRequestsTs([], jobs));
 });
 
 // ---------- Khi nào gửi, gửi gì ----------
@@ -215,10 +242,18 @@ test('chỉ gửi khi CHUYỂN vào trạng thái cần bạn; đổi trường 
     await env.settle();
     assert.deepEqual(env.calls.map((c) => c.payload.title), ['Cần bạn duyệt kế hoạch', 'Cần bạn duyệt kế hoạch', 'Cần bạn duyệt kết quả', 'Cần bạn xem']);
 
-    // Hoàn thành / dừng / lỗi không phải chờ bạn.
-    for (const status of ['done', 'stopped', 'failed', 'executing', 'planning']) env.runner.emit('epic', epicRow({ id: 3, status }));
+    // Hoàn thành / dừng / đang chạy không phải chờ bạn.
+    for (const status of ['done', 'stopped', 'executing', 'planning']) env.runner.emit('epic', epicRow({ id: 3, status }));
     await env.settle();
     assert.equal(env.calls.length, 4);
+
+    // Yêu cầu bị lỗi thì chủ còn cứu được (chạy lại lượt của Giám đốc, cứu việc lớn...): báo, và chỉ báo một lần.
+    env.runner.emit('epic', epicRow({ id: 3, status: 'failed', title: 'Hỏng kế hoạch' }));
+    env.runner.emit('epic', epicRow({ id: 3, status: 'failed' }));
+    await env.settle();
+    assert.equal(env.calls.length, 5);
+    assert.equal(env.calls[4].payload.title, 'Việc bị lỗi, cần bạn chọn cách xử lý');
+    assert.equal(env.calls[4].payload.tag, 'epic:3:failed');
   } finally {
     await env.cleanup();
   }
@@ -238,8 +273,82 @@ test('việc lớn: chỉ việc lẻ (không thuộc yêu cầu nào) cần xem
     await env.settle();
     assert.equal(env.calls.length, 1);
     assert.equal(env.calls[0].payload.tag, 'job:3:attention');
+    // Việc lớn lẻ bị lỗi cũng cần chủ (xử lý việc con lỗi, hoặc cho Trưởng nhóm lập kế hoạch lại); thuộc yêu cầu thì để yêu cầu báo.
+    env.runner.emit('job', jobRow({ id: 4, status: 'failed' }));
+    env.runner.emit('job', jobRow({ id: 5, epic_id: 7, status: 'failed' }));
+    await env.settle();
+    assert.equal(env.calls.length, 2);
+    assert.equal(env.calls[1].payload.tag, 'job:4:failed');
   } finally {
     await env.cleanup();
+  }
+});
+
+test('việc bị lỗi: báo một lần khi chuyển sang lỗi; việc con chỉ báo khi việc lớn còn chạy; làm lại rồi lỗi lần nữa thì báo lại', async () => {
+  const env = svcEnv();
+  try {
+    env.subscribe(1);
+    const taskRow = (over = {}) => ({ id: 1, title: 'Tạo hello', status: 'running', member: 'An', kind: 'work', job_id: null, epic_id: null, ...over });
+    env.runner.emit('task', taskRow({ status: 'queued' }));
+    env.runner.emit('task', taskRow({ status: 'running' }));
+    env.runner.emit('task', taskRow({ status: 'done' }));
+    await env.settle();
+    assert.equal(env.calls.length, 0, 'việc chạy bình thường thì không báo');
+
+    env.runner.emit('task', taskRow({ id: 2, status: 'running' }));
+    env.runner.emit('task', taskRow({ id: 2, status: 'failed' }));
+    env.runner.emit('task', taskRow({ id: 2, status: 'failed', title: 'Tạo hello (sửa tên)' }));
+    await env.settle();
+    assert.equal(env.calls.length, 1);
+    assert.equal(env.calls[0].payload.tag, 'task:2:failed');
+    assert.equal(env.calls[0].payload.title, 'Việc bị lỗi, cần bạn chọn cách xử lý');
+
+    // Chủ cho làm lại rồi lại lỗi: báo lại.
+    env.runner.emit('task', taskRow({ id: 2, status: 'queued' }));
+    env.runner.emit('task', taskRow({ id: 2, status: 'failed' }));
+    await env.settle();
+    assert.equal(env.calls.length, 2);
+
+    // Việc con: báo khi việc lớn còn chạy, không báo khi việc lớn đã kết thúc hay không tồn tại.
+    const open = env.store.createJob({ title: 'Lớn', prompt: 'p', team: 'backend', lead: 'L', status: 'running' });
+    const closed = env.store.createJob({ title: 'Xong', prompt: 'p', team: 'backend', lead: 'L', status: 'attention' });
+    env.runner.emit('task', taskRow({ id: 3, status: 'failed', job_id: open.id }));
+    env.runner.emit('task', taskRow({ id: 4, status: 'failed', job_id: closed.id }));
+    env.runner.emit('task', taskRow({ id: 5, status: 'failed', job_id: 4242 }));
+    env.runner.emit('task', taskRow({ id: 6, status: 'failed', kind: 'review', job_id: open.id }));
+    await env.settle();
+    assert.deepEqual(env.calls.slice(2).map((c) => c.payload.tag), ['task:3:failed']);
+
+    // Nhân viên hỏi chủ: báo khi chuyển sang chờ trả lời; hỏi người khác trong team (không có ask_owner_id) thì không báo.
+    env.runner.emit('task', taskRow({ id: 7, status: 'running', ask_owner_id: 1 }));
+    env.runner.emit('task', taskRow({ id: 7, status: 'waiting_answer', ask_owner_id: 1 }));
+    env.runner.emit('task', taskRow({ id: 8, status: 'running', ask_owner_id: null }));
+    env.runner.emit('task', taskRow({ id: 8, status: 'waiting_answer', ask_owner_id: null }));
+    await env.settle();
+    const asked = env.calls.slice(3);
+    assert.deepEqual(asked.map((c) => [c.payload.tag, c.payload.title]), [['task:7:asking', 'Nhân viên đang hỏi bạn']]);
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test('khởi động lại: việc đã lỗi từ trước không bị báo lại', async () => {
+  const root = tmpDir('company-push-restart-task-');
+  const store = openDb(path.join(root, 'company.db'));
+  try {
+    const task = store.createTask({ title: 'Cũ', prompt: 'p', team: 'backend', member: 'An', role: 'dev' });
+    store.updateTask(task.id, { status: 'failed' });
+    const runner = new EventEmitter();
+    const calls = [];
+    const svc = new PushService({ store, runner, dataDir: root, subject: 'https://x.example', auth: { validateHash: () => ({}) }, send: async (_s, p) => { calls.push(JSON.parse(p)); }, log: () => {} });
+    svc.start();
+    svc.subscribe(makeDevice('rt').subscription);
+    runner.emit('task', { ...store.getTask(task.id) });
+    await svc.stop();
+    assert.equal(calls.length, 0);
+  } finally {
+    store.close();
+    removeDir(root);
   }
 });
 
@@ -747,10 +856,13 @@ test('chữ thông báo cục bộ (giao diện) khớp với thông báo đẩy
       ['epic', { id: 2, title: 'Trang   liên\nhệ', status: 'awaiting_result', director: 'GĐ' }],
       ['epic', { id: 3, title: 'x'.repeat(300), status: 'attention', director: 'GĐ' }],
       ['job', { id: 4, title: 'Sửa lỗi', status: 'attention', lead: 'L', epic_id: null }],
+      ['task', { id: 5, title: 'Tạo hello', status: 'failed', member: 'An', kind: 'work', job_id: null, epic_id: null }],
+      ['task', { id: 6, title: 'Chọn cách A hay B', status: 'waiting_answer', member: 'An', kind: 'work', job_id: null, epic_id: null, ask_owner_id: 3 }],
     ];
     for (const [kind, row] of rows) env.runner.emit(kind, row);
     await env.settle();
-    const expected = rows.map(([kind, row]) => notifyMessage({ kind, id: row.id, title: row.title, status: row.status }));
+    // Việc đang hỏi chủ có trạng thái việc là waiting_answer nhưng "việc cần bạn" của nó là asking.
+    const expected = rows.map(([kind, row]) => notifyMessage({ kind, id: row.id, title: row.title, status: row.status === 'waiting_answer' ? 'asking' : row.status }));
     assert.deepEqual(env.calls.map((c) => c.payload), expected);
   } finally {
     await env.cleanup();

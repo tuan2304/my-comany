@@ -517,7 +517,7 @@ test('mã thông báo của nhân viên: chỉ dùng được công cụ hỏi, 
     const w = ctx.runner.createWork({ found, title: 'x', prompt: 'y', level: 'normal' });
     ctx.runner.agentRuns.set('tok-live', w.id);
     const tools = await (await fetch(`${api}/api/agent/tools`, { headers: { authorization: 'Bearer tok-live' } })).json();
-    assert.deepEqual(tools.tools.map((x) => x.name).sort(), ['ask_colleague', 'ask_lead', 'call_meeting']);
+    assert.deepEqual(tools.tools.map((x) => x.name).sort(), ['ask_colleague', 'ask_lead', 'ask_owner', 'call_meeting']);
     for (const name of ['assign_to_member', 'review_submission', 'finish_epic', 'create_team_job', 'set_contract', 'get_team_workload']) {
       const res = await (await post({ name, arguments: {} }, 'tok-live')).json();
       assert.equal(res.isError, true, `${name} không được dùng bởi nhân viên`);

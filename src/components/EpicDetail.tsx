@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { EPIC_STATUS_LABEL, JOB_STATUS_LABEL, STATUS_LABEL, TASK_KIND_LABEL } from '@/lib/format';
 import type { Epic, Job, Task } from '@/lib/types';
+import FailurePanel from './FailurePanel';
+import IntegratePanel from './IntegratePanel';
 
 interface Props {
   epic: Epic;
@@ -72,9 +74,14 @@ export default function EpicDetail({ epic, jobs, directorTasks, selectedJobId, s
         </section>
       )}
 
+      {(epic.status === 'attention' || epic.status === 'failed') && (
+        <FailurePanel key={`${epic.id}:${epic.status}:${epic.round}:${epic.finished_at ?? 0}`} epic={epic} onSelectJob={onSelectJob} />
+      )}
+
       {epic.status !== 'awaiting_result' && epic.merge_branch && (
         <p>Kết quả ghép của các team nằm ở nhánh <code>{epic.merge_branch}</code> (chưa push).</p>
       )}
+      {epic.status === 'done' && <IntegratePanel key={`${epic.id}:${epic.finished_at ?? 0}`} kind="epic" id={epic.id} />}
       {epic.status === 'done' && epic.final_report && (
         <section>
           <h3>Báo cáo của Giám đốc</h3>

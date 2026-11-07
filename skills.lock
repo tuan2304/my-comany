@@ -6,7 +6,7 @@
       "commit": "b43ac4f6e892ef608f8851428613c4009f0e84c7",
       "license": "Apache License",
       "excluded": [],
-      "sha256": "db87af300c186541533acda2c53be9edd9891ee39359c494ee6b563fcc5a2a49",
+      "sha256": "22b9fda90def3892f27447a25257a3bcee2b555573b68d803fa71bbe582d14f4",
       "addedAt": "2026-11-06T03:39:55.683Z"
     },
     "agent-desktop-windows": {
@@ -14,7 +14,7 @@
       "commit": "b43ac4f6e892ef608f8851428613c4009f0e84c7",
       "license": "Apache License",
       "excluded": [],
-      "sha256": "fb20d2f8101150b0398e2e78bf197e15cd01023bc76a56f839e6332b662465cb",
+      "sha256": "16b62150655523715d2795d9ab5c107a33b9d49a46e271f5059313ca0a75e260",
       "addedAt": "2026-11-06T03:40:15.532Z"
     },
     "composition-patterns": {
@@ -26,7 +26,7 @@
         "README.md",
         "metadata.json"
       ],
-      "sha256": "b94774b84619663ae9e7bc4c04d26ed677b496fec1f8ed4792b006374e02b9ba",
+      "sha256": "92da5de3f08c6473a5349c5583559bcd59da6d95c86d5e5c400b9b2d08309173",
       "addedAt": "2026-11-05T18:54:46.247Z"
     },
     "design-taste-frontend": {
@@ -34,8 +34,8 @@
       "commit": "37c8c376b92ebc02456f7c70776b514fddda88e1",
       "license": "MIT License",
       "excluded": [],
-      "sha256": "dba43b2aefa327f20a9c5074cafb8a4dea949de19df776525cdbf4d1388831ee",
-      "addedAt": "2026-11-06T03:39:21.848Z"
+      "sha256": "b22aec648128a27c2646cf8847259073d939e7c7a28761a8ce39e84a082416dc",
+      "addedAt": "2026-11-06T17:44:00.586Z"
     },
     "differential-review": {
       "source": "trailofbits/skills/plugins/differential-review/skills/differential-review",
@@ -45,7 +45,7 @@
         "agents",
         "assets"
       ],
-      "sha256": "32554c490cfb0385e180e527b3aac4d2db7a6b087b011a6a14a8f2386fb10931",
+      "sha256": "f633c0d7620bd93e7026deb3a2329ba8bcdb27aa776ca6ce938574f2d3f6cb2f",
       "addedAt": "2026-11-06T08:23:17.424Z"
     },
     "headroom": {
@@ -53,7 +53,7 @@
       "commit": "7877241d84c93b3ec487e07324245838ddae85cc",
       "license": "Apache License",
       "excluded": [],
-      "sha256": "04cdfe21d2cda5788600959b684e8a90fa16f61dc1283165c21eb7ee37c565af",
+      "sha256": "a9bf4b6e5011e40d85d80703f0bea77460d25f14308e5f12fb30d928d53480a6",
       "addedAt": "2026-11-06T03:38:58.077Z"
     },
     "impeccable": {
@@ -63,7 +63,7 @@
       "excluded": [
         "scripts"
       ],
-      "sha256": "256bca45ed460cb411ec6a2fed93ab48dc1e448f5e765facd9b7fed0f70f2be6",
+      "sha256": "6233ca8de9c5ddb21a40fe2ba0fc8d1dee22ddf1c0006a15463bda2a1fd2f831",
       "addedAt": "2026-11-06T03:39:16.814Z"
     },
     "ponytail": {
@@ -71,7 +71,7 @@
       "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846",
       "license": "MIT License",
       "excluded": [],
-      "sha256": "4d250d66d2980241bcfa082b8b335df3882e713c031a2e4734cf061234a28413",
+      "sha256": "b40d655883ea462755ae12373b59833fce20ba256bc06b0bc4e08dc59ba2ca5d",
       "addedAt": "2026-11-05T15:32:02.319Z"
     },
     "react-best-practices": {
@@ -83,16 +83,8 @@
         "README.md",
         "metadata.json"
       ],
-      "sha256": "657543f2f5b72a5ed1045a9c958eff83a8647b272dcfce260be65b0e439326dc",
+      "sha256": "dfcc8905d99bad97e6714e3becc0e2cfae70b11c08f5de2beee04be431550009",
       "addedAt": "2026-11-05T18:54:44.124Z"
-    },
-    "redesign-existing-projects": {
-      "source": "tasteskill/tasteskill/skills/redesign-skill",
-      "commit": "37c8c376b92ebc02456f7c70776b514fddda88e1",
-      "license": "MIT License",
-      "excluded": [],
-      "sha256": "46d22e2c9caadb2f793af5fe6c97a37397789a84e406246cc4adb944a2ed7b60",
-      "addedAt": "2026-11-06T03:39:28.148Z"
     },
     "sharp-edges": {
       "source": "trailofbits/skills/plugins/sharp-edges/skills/sharp-edges",
@@ -102,7 +94,7 @@
         "agents",
         "assets"
       ],
-      "sha256": "8305af8ac3855ff941e4a03ee82f09b154698ef0b8410a1c0f2aca586d50644f",
+      "sha256": "d3db961a1c48630c0f97ea2f426659ac1574055c97c1ea301e62d9b79ac8b8e2",
       "addedAt": "2026-11-05T15:32:07.295Z"
     },
     "supabase": {
@@ -113,7 +105,7 @@
         "references/skill-feedback.md",
         "assets/feedback-issue-template.md"
       ],
-      "sha256": "bddec0c7bda8a91d376cc3c044e073997bafb765b81470d6684d4f943f7b0486",
+      "sha256": "3c1363393d1ca3258dad1b77de991553345e435175d4c9ddbbe2c12b6c2e442f",
       "addedAt": "2026-11-05T15:32:12.013Z"
     },
     "supabase-postgres-best-practices": {
@@ -121,7 +113,7 @@
       "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
       "license": "MIT License",
       "excluded": [],
-      "sha256": "cce3f6293cfb1671045a03788680568d2bb246a93885642697b04ed2b677807e",
+      "sha256": "a714d433362542f2d52e8b7958d1691c49fa4f43c9645c9a647895fb3ca85f92",
       "addedAt": "2026-11-05T15:32:14.895Z"
     },
     "systematic-debugging": {
@@ -154,7 +146,7 @@
         "data/data-provenance.json",
         "data/catalog-summary.json"
       ],
-      "sha256": "4bc5c51d4ce65d33c742c9ce0d187b9a80e838e9867f038f3c79f5da6e754725",
+      "sha256": "6fad643848d8b89e11cfb54e62efd0545c3bb8d16862de0691ed36b594019f55",
       "addedAt": "2026-11-05T18:54:51.416Z"
     },
     "verification-before-completion": {
@@ -170,7 +162,7 @@
       "commit": "ca45fc496a3436251f191354091d557da31c15b5",
       "license": null,
       "excluded": [],
-      "sha256": "4d82f1a910e644e21105cdf55b725056b429696afe01cd5983b16b0e122a8511",
+      "sha256": "abfaf4cc6cf572346e22fed42dc0cfaacd2f64c5d9667f44a94b02ea0d3b1342",
       "addedAt": "2026-11-05T18:54:58.422Z"
     }
   }

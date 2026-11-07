@@ -27,13 +27,29 @@ export function listFiles(dir) {
   return out.sort();
 }
 
+/**
+ * File văn bản đổi CRLF thành LF trước khi băm: git trên Windows (autocrlf) đổi kiểu xuống dòng khi clone,
+ * nên nếu băm nguyên byte thì skill đã duyệt sẽ "bị sửa" chỉ vì clone sang máy khác. File nhị phân (có byte NUL) giữ nguyên.
+ */
+function normalizedBytes(file) {
+  const buf = fs.readFileSync(file);
+  if (buf.includes(0) || !buf.includes(13)) return buf;
+  const out = Buffer.allocUnsafe(buf.length);
+  let n = 0;
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] === 13 && buf[i + 1] === 10) continue;
+    out[n++] = buf[i];
+  }
+  return out.subarray(0, n);
+}
+
 /** Băm toàn bộ cây thư mục (đường dẫn + nội dung) để phát hiện skill bị sửa sau khi duyệt. */
 export function hashDir(dir) {
   const hash = crypto.createHash('sha256');
   for (const rel of listFiles(dir)) {
     hash.update(rel);
     hash.update('\0');
-    hash.update(fs.readFileSync(path.join(dir, rel)));
+    hash.update(normalizedBytes(path.join(dir, rel)));
     hash.update('\0');
   }
   return hash.digest('hex');
@@ -65,12 +81,16 @@ export function verifyLibrary({ libraryDir, lockFile }) {
  * Ghép gói skill cho một lần chạy: skill luôn nạp của vai trò + skill theo công nghệ
  * khi hồ sơ dự án khớp. Chỉ nạp skill có trong lock và còn nguyên vẹn.
  */
-export function composeSkillPack({ libraryDir, lockFile, role, project, outDir }) {
-  const names = new Set(role.skills ?? []);
+export function composeSkillPack({ libraryDir, lockFile, role, project, outDir, skillSet = null, excludeSkills = [] }) {
+  // Thi đấu skill: bỏ các skill đang đem ra so sánh khỏi phần mặc định của vai trò, rồi nạp đúng bộ skill của việc này.
+  const exclude = new Set(excludeSkills);
+  const names = new Set((role.skills ?? []).filter((n) => !exclude.has(n)));
+  for (const n of skillSet ?? []) names.add(String(n));
   const stack = (project?.stack ?? []).map((s) => s.toLowerCase());
   for (const [key, list] of Object.entries(role.stack_skills ?? {})) {
     if (stack.some((s) => s.includes(String(key).toLowerCase()))) for (const n of list) names.add(String(n));
   }
+  for (const n of exclude) if (!(skillSet ?? []).includes(n)) names.delete(n);
   const lock = readLock(lockFile);
   const loaded = [];
   const skipped = [];

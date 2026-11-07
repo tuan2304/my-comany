@@ -62,6 +62,8 @@ export function loadConfig({ projectRoot, overrides = {} } = {}) {
     quotaMarginMs: 30_000,
     // Thời gian tối đa cho một lượt trả lời câu hỏi của đồng nghiệp (phút); quá hạn thì người hỏi tự quyết.
     answerTimeoutMinutes: 5,
+    // Chờ bao lâu rồi tự làm tiếp một việc bị tiến trình thoát bất thường (một lần duy nhất).
+    autoRetryDelayMs: 30_000,
     claudeBin: process.env.COMPANY_CLAUDE_BIN || 'claude',
     // Dùng khi kiểm thử: chạy "node fake-claude.mjs" thay cho claude thật.
     claudeArgsPrefix: [],

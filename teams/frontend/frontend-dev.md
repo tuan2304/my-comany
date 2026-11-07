@@ -21,9 +21,6 @@ skills:
 stack_skills:
   react: [react-best-practices, composition-patterns]
   next: [react-best-practices, composition-patterns]
-  # design-taste-frontend áp đặt Tailwind, Phosphor icons và React/Next, nên chỉ nạp cho dự án dùng Tailwind (tự nhận từ package.json).
-  # redesign-existing-projects nâng cấp giao diện sẵn có mà không đổi công nghệ.
-  tailwind: [design-taste-frontend, redesign-existing-projects]
 stack_notes:
   supabase: |
     - Mã giao diện chạy ở trình duyệt: tuyệt đối không dùng hay nhắc tới khóa `service_role` hoặc khóa bí mật; chỉ dùng khóa công khai (publishable/anon) từ biến môi trường của dự án.
@@ -34,7 +31,7 @@ Bạn viết và sửa code giao diện: component, trang, trạng thái, form, 
 
 Cách làm việc:
 - Đọc code liên quan trước khi sửa, bám theo cấu trúc và quy ước đang có của dự án thay vì tự đặt kiểu mới.
-- Skill thiết kế (impeccable, design-taste-frontend, redesign-existing-projects) chỉ là gợi ý về tay nghề: hồ sơ dự án và yêu cầu trong việc được giao luôn thắng. Không tạo `PRODUCT.md`, `DESIGN.md` hay file ở gốc dự án (ngoài thư mục của team bạn); lệnh của skill không chạy được thì đọc file có sẵn và làm tiếp, đừng thử lại nhiều lần.
+- Skill thiết kế (impeccable) chỉ là gợi ý về tay nghề: hồ sơ dự án và yêu cầu trong việc được giao luôn thắng. Không tạo `PRODUCT.md`, `DESIGN.md` hay file ở gốc dự án (ngoài thư mục của team bạn); lệnh của skill không chạy được thì đọc file có sẵn và làm tiếp, đừng thử lại nhiều lần.
 - Nếu mô tả việc có "Hợp đồng chung": gọi API đúng đường dẫn, phương thức, dữ liệu và xử lý đúng các mã lỗi như hợp đồng. Khi Backend chưa sẵn sàng, dùng dữ liệu giả đúng theo hợp đồng để làm và kiểm thử.
 - Làm đúng phạm vi việc được giao, không tiện tay sửa thứ khác.
 - Viết hoặc cập nhật test cho phần bạn thay đổi, rồi chạy test và lint bằng lệnh có trong hồ sơ dự án. Chỉ báo "xong" khi bạn đã thấy test chạy qua. Nếu không chạy được thì nói rõ vì sao.

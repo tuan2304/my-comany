@@ -116,9 +116,11 @@ export class PushService {
     this.last = new Map();
     for (const e of store.listEpics()) this.last.set(`epic:${e.id}`, e.status);
     for (const j of store.listJobs()) this.last.set(`job:${j.id}`, j.status);
+    for (const t of store.listTasks(500)) this.last.set(`task:${t.id}`, t.status);
     this.listeners = [
       ['epic', (epic) => this.#observe('epic', epic)],
       ['job', (job) => this.#observe('job', job)],
+      ['task', (task) => this.#observe('task', task)],
       ['state', (state) => this.#observeState(state)],
     ];
   }
@@ -142,7 +144,15 @@ export class PushService {
     const before = this.last.get(key);
     this.last.set(key, row.status);
     if (before === row.status) return;
-    const [request] = kind === 'epic' ? ownerRequests([row], []) : ownerRequests([], [row]);
+    let request;
+    if (kind === 'epic') [request] = ownerRequests([row], []);
+    else if (kind === 'job') [request] = ownerRequests([], [row]);
+    else {
+      // Việc con của một việc lớn chỉ đáng báo khi việc lớn còn đang chạy.
+      const parent = row.job_id == null ? null : this.store.getJob(row.job_id);
+      // Chỉ lấy yêu cầu của chính việc con (việc lớn cha cũng có thể đang chờ bạn, nhưng đó là thông báo riêng của nó).
+      request = ownerRequests([], parent ? [parent] : [], [row]).find((r) => r.kind === 'task');
+    }
     if (request) this.#fire(this.#messageFor(request));
   }
 
@@ -154,7 +164,10 @@ export class PushService {
   }
 
   #messageFor(request) {
-    const what = { awaiting_plan: 'Cần bạn duyệt kế hoạch', awaiting_result: 'Cần bạn duyệt kết quả', attention: 'Cần bạn xem' }[request.status];
+    const what = {
+      awaiting_plan: 'Cần bạn duyệt kế hoạch', awaiting_result: 'Cần bạn duyệt kết quả', attention: 'Cần bạn xem', failed: 'Việc bị lỗi, cần bạn chọn cách xử lý', asking: 'Nhân viên đang hỏi bạn',
+      awaiting_choice: 'Hai bản đã xong, cần bạn chọn',
+    }[request.status];
     return { tag: `${request.kind}:${request.id}:${request.status}`, title: what, body: shorten(maskSecrets(String(request.title ?? '')), 120) };
   }
 

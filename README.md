@@ -2,24 +2,114 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Công ty ảo chạy bằng Claude Code (gói Pro). Bạn giao việc, các "nhân viên" (mỗi người một tiến trình `claude -p` với vai trò, model và skill riêng) làm trong nhánh git riêng, bạn xem kết quả trên giao diện web.
+**Công ty ảo chạy bằng Claude Code: bạn giao việc, một đội nhân viên AI làm, bạn duyệt rồi mới lấy kết quả.**
 
-![Văn phòng 3D đang làm việc](docs/images/van-phong-chay.gif)
+![My Company: văn phòng 3D đang làm việc](docs/images/van-phong-chay.gif)
 
-*Văn phòng 3D chạy thật: nhân viên đi đọc code ở thư viện, vào phòng server chạy lệnh, giấy bay giữa các bàn khi việc được giao và nộp. (Ảnh chụp với Claude giả, để minh họa mà không tốn hạn mức.)*
+*Văn phòng 3D chạy thật: nhân viên đi đọc code ở thư viện, vào phòng server chạy lệnh, giấy bay giữa các bàn khi việc được giao và nộp. (Ảnh chụp với Claude giả để minh họa mà không tốn hạn mức.)*
 
-Giao **việc lẻ** cho một nhân viên, **việc lớn** cho một team (Trưởng nhóm chia việc, duyệt bài, gộp nhánh), hoặc **yêu cầu cho cả công ty** (Giám đốc chốt hợp đồng chung và chia việc cho các team). Không có gì được push lên git: bạn xem kết quả rồi tự quyết.
+**Mục lục:** [1. Sản phẩm](#1-sản-phẩm) · [2. Mô tả](#2-mô-tả-sản-phẩm) · [3. Cách hoạt động](#3-cách-hoạt-động) · [4. Hướng dẫn cài đặt](#4-hướng-dẫn-cài-đặt) · [Tài liệu chi tiết](docs/HUONG-DAN-CHI-TIET.md)
 
-## Yêu cầu
+---
 
-- Node.js 22.13 trở lên, git, Claude Code đã đăng nhập bằng tài khoản **claude.ai gói Pro**.
-- Không cần và không dùng khóa API. Công cụ gỡ `ANTHROPIC_API_KEY` khỏi mọi tiến trình `claude` nó chạy.
+## 1. Sản phẩm
 
-## Bắt đầu nhanh
+**Tên: My Company** (lệnh chạy: `my-company`).
 
-**Bước 1. Cài vào dự án của bạn.** Dự án phải là git repo và đã có ít nhất một commit.
+Một ứng dụng web chạy trên máy của bạn, biến Claude Code thành một công ty phần mềm thu nhỏ có Giám đốc, Trưởng nhóm và nhân viên, kèm một **văn phòng 3D** để bạn nhìn thấy ai đang làm gì.
 
+![Văn phòng 3D](docs/images/03-van-phong-3d.png)
+
+*Văn phòng 3D isometric (có nút chuyển sang 2D pixel art). Mỗi chấm màu trên bàn là một trạng thái: đang làm, chờ duyệt bài, quá tải, vừa lỗi, chờ bạn quyết.*
+
+## 2. Mô tả sản phẩm
+
+**Vấn đề:** dùng Claude Code cho việc lớn thì bạn phải ngồi canh từng phiên, tự chia việc, tự kiểm tra, và khó giao nhiều việc song song mà không rối.
+
+**My Company giải quyết bằng cách tổ chức Claude thành công ty:**
+
+- **Giao việc theo ba cỡ.** *Việc lẻ* cho một nhân viên; *việc lớn* cho cả một team (Trưởng nhóm chia việc, duyệt bài, gộp nhánh); *yêu cầu cho cả công ty* (Giám đốc chốt "hợp đồng" chung giữa các team rồi chia việc).
+- **Làm song song, không giẫm chân nhau.** Mỗi nhân viên một tiến trình `claude -p` với vai trò, model và skill riêng, làm trong **nhánh git riêng**.
+- **Bạn luôn là người quyết.** Hai điểm dừng bắt buộc: duyệt kế hoạch trước khi làm, duyệt kết quả trước khi lấy. **Không có gì được push lên git.**
+- **Chạy bằng gói Claude Pro, không cần khóa API.** Hết hạn mức thì cả công ty nghỉ, hồi lại thì tự làm tiếp.
+- **Nhìn thấy công ty làm việc.** Văn phòng 3D/2D, bảng kanban, tải của từng team, nhật ký hội thoại, báo cáo tuần, duyệt việc từ điện thoại.
+- **Xử lý khi lỗi.** Việc lỗi có chẩn đoán rõ nguyên nhân và các phương án cứu (làm tiếp, nâng model, làm lại, nhận phần đã làm).
+
+**Dành cho:** lập trình viên (hoặc người làm sản phẩm) có một dự án git và một tài khoản Claude Pro, muốn giao việc cho AI theo kiểu "quản lý một đội" thay vì "ngồi cạnh một trợ lý".
+
+**Công ty gồm 7 team gửi kèm** (sửa hoặc thêm team bằng file Markdown trong `teams/`, không cần sửa code): Ban giám đốc, Backend, Frontend, Chất lượng (QA), DevOps, Thiết kế UI/UX, Bảo mật; tổng 18 nhân viên.
+
+## 3. Cách hoạt động
+
+### Luồng một yêu cầu
+
+```mermaid
+flowchart LR
+    A([Bạn giao việc]) --> B[Giám đốc đọc code<br/>chốt hợp đồng chung<br/>chia việc cho các team]
+    B --> C{{Điểm dừng 1<br/>Bạn duyệt kế hoạch}}
+    C -->|Duyệt| D[Trưởng nhóm chia việc con<br/>cho nhân viên]
+    C -->|Từ chối + nhận xét| B
+    D --> E[Nhân viên làm song song<br/>mỗi người một nhánh git]
+    E --> F[Trưởng nhóm duyệt bài<br/>hoặc trả lại làm tiếp]
+    F --> G[Gộp nhánh các team<br/>vào company/epic N]
+    G --> H[Giám đốc đọc code,<br/>chạy test, báo cáo]
+    H --> I{{Điểm dừng 2<br/>Bạn duyệt kết quả}}
+    I -->|Duyệt| J([Bấm Đưa vào dự án<br/>git merge --no-ff])
 ```
+
+Ba cỡ việc dùng cùng khung này, chỉ khác điểm bắt đầu: *việc lẻ* bỏ qua Giám đốc và Trưởng nhóm; *việc lớn* bắt đầu từ Trưởng nhóm; *yêu cầu* bắt đầu từ Giám đốc.
+
+| 1. Giao yêu cầu | 2. Duyệt kế hoạch (điểm dừng 1) | 3. Duyệt kết quả (điểm dừng 2) |
+|---|---|---|
+| ![Form giao yêu cầu](docs/images/01-giao-viec.png) | ![Kế hoạch chờ duyệt](docs/images/02-duyet-ke-hoach.png) | ![Duyệt kết quả](docs/images/05-duyet-ket-qua.png) |
+
+### Ba tầng nhân sự
+
+| Tầng | Quyền | Làm gì |
+|---|---|---|
+| **Giám đốc** | Chỉ đọc | Chốt hợp đồng chung (đường dẫn API, dữ liệu vào ra, mã lỗi), chia yêu cầu cho các team, kiểm tra kết quả đã ghép |
+| **Trưởng nhóm** | Chỉ đọc | Xem tải của từng người, chia việc con (không chồng lấn file), duyệt hoặc trả bài |
+| **Nhân viên** | Sửa code trong phạm vi team | Làm việc con trong worktree riêng, có thể hỏi Trưởng nhóm, đồng nghiệp hoặc chính bạn khi vướng thật |
+
+Mỗi nhân viên làm tối đa 1 việc và giữ 2 việc chờ; tối đa 2 tiến trình `claude` chạy cùng lúc (đổi bằng `COMPANY_MAX_CONCURRENT`).
+
+### Cơ chế bên dưới
+
+- **Mỗi việc một worktree và một nhánh git** (`company/<tên>-task<số>`), đặt ở thư mục anh em `<tên-dự-án>-worktrees/`. Công cụ tự commit khi xong. Code bạn đang viết dở không bị đụng tới.
+- **Một nhân viên = một tiến trình `claude -p`** với model, mức suy luận, công cụ và skill theo file vai trò trong `teams/`. Việc lỗi giữa chừng được tiếp tục bằng `--resume` (giữ nguyên phiên cũ).
+- **Giao tiếp qua MCP của công ty.** Giám đốc, Trưởng nhóm và nhân viên gọi công cụ như `assign_to_member`, `approve`, `reject`, `ask_lead`, `ask_owner`. Máy chủ ép luật (giới hạn tải, số lần hỏi, không chồng lấn phạm vi).
+- **Chọn model theo độ khó.** Một lần gọi `haiku` nhỏ đánh giá độ khó rồi chọn model: đơn giản dùng `haiku`, bình thường theo vai trò, khó dùng `opus`. Việc hết lượt mà chưa xong tự nâng một bậc.
+- **Hạn mức Pro:** đọc từ sự kiện `rate_limit_event` của Claude; hết thì lưu việc dở, cả công ty nghỉ, tới giờ hồi thì tự làm tiếp. Công cụ gỡ `ANTHROPIC_API_KEY` khỏi mọi tiến trình con nên không bao giờ tính tiền API.
+- **Văn phòng 3D phản ánh dữ liệu thật.** Mô phỏng lấy trạng thái việc qua WebSocket (ai đọc code thì ra thư viện, ai chạy lệnh thì vào phòng server, giấy bay khi giao việc, nộp bài, trả bài).
+
+### An toàn
+
+- **Không bao giờ push.** Việc đưa vào dự án chỉ xảy ra khi bạn bấm **Đưa vào dự án**, và hệ thống từ chối nếu thư mục dự án đang có file sửa dở hoặc gộp sẽ xung đột.
+- **Chặn cứng bằng hook** (`server/path-guard.mjs`): nhân viên không đọc hay sửa được `.env`, `.git`, file ngoài worktree; chỉ sửa trong thư mục của team (`folders` trong hồ sơ dự án).
+- **Chỉ chạy lệnh được cho phép:** lệnh Bash nào không nằm trong `allowed_commands` của hồ sơ dự án thì bị từ chối.
+- **Chỉ nghe ở `127.0.0.1`**, từ chối `Host`/`Origin` lạ. Truy cập từ xa (điện thoại) đi qua Tailscale và phải có PIN.
+- **Skill phải được duyệt:** chỉ skill ghi trong `skills.lock` (kèm mã băm) mới được nạp; sửa nội dung sau khi duyệt thì bị từ chối.
+
+Chi tiết từng cơ chế, bảng trạng thái văn phòng, xử lý lỗi, thi đấu skill... xem **[Hướng dẫn chi tiết](docs/HUONG-DAN-CHI-TIET.md)**.
+
+## 4. Hướng dẫn cài đặt
+
+> **Cách đọc phần này.** Các bước đều ngắn, trừ những chỗ đánh dấu **⚠ Chỗ khó**. Ở mỗi chỗ đó có sẵn một câu lệnh mẫu: mở Claude Code (hoặc một AI bất kỳ có đọc được code) **trong thư mục dự án của bạn**, dán câu đó, nó sẽ tự đọc code rồi điền giúp bạn.
+
+### Bước 0. Chuẩn bị
+
+| Cần có | Kiểm tra bằng | Ghi chú |
+|---|---|---|
+| Node.js **22.13 trở lên** | `node --version` | Lệnh `node` phải có trong PATH vì hook chặn thư mục gọi nó |
+| git | `git --version` | |
+| Claude Code, đăng nhập bằng tài khoản **claude.ai gói Pro** | `claude --version` rồi `claude auth status` | Chưa đăng nhập thì chạy `claude` một lần và làm theo hướng dẫn. **Không** đăng nhập bằng khóa API |
+| Một dự án là **git repo và đã có ít nhất một commit** | `git log -1` | Chưa có commit thì `git add -A && git commit -m "init"` |
+
+Không cần khóa API. Có biến `ANTHROPIC_API_KEY` trên máy cũng không sao: công cụ tự gỡ nó khỏi mọi tiến trình `claude` mà nó chạy.
+
+### Bước 1. Cài vào dự án của bạn
+
+```bash
 cd <thư mục dự án của bạn>
 git clone https://github.com/tuan2304/my-comany.git .my-company
 cd .my-company
@@ -27,238 +117,181 @@ npm install
 npm run init
 ```
 
-`npm run init` ẩn công cụ khỏi git của dự án và tạo `local/project.md` (bản nháp hồ sơ dự án).
+`npm run init` làm hai việc: ẩn thư mục `.my-company/` khỏi git của dự án (qua `.git/info/exclude`, không sửa `.gitignore` của bạn) và tạo bản nháp hồ sơ dự án `local/project.md`, tự đoán công nghệ và lệnh test/build từ `package.json`.
 
-**Bước 2. Sửa hồ sơ dự án.** Mở `local/project.md`, ghi đúng công nghệ, thư mục mỗi team được sửa (`folders`), và các lệnh nhân viên được chạy (`allowed_commands`, ví dụ `npm test`). Chưa khai lệnh thì nhân viên không chạy được lệnh nào.
+Gốc dự án mặc định là **thư mục cha** của `.my-company/`. Muốn đặt công cụ ở chỗ khác, thêm `--project <thư mục dự án>` vào mọi lệnh (hoặc đặt `COMPANY_PROJECT_ROOT`).
 
-**Bước 3. Kiểm tra môi trường.**
+### Bước 2. Sửa hồ sơ dự án `local/project.md`
 
+> **⚠ Chỗ khó.** Đây là bước quan trọng nhất và dễ làm sai nhất, vì hồ sơ này quyết định **nhân viên được sửa thư mục nào** và **được chạy lệnh nào**. Bản nháp do `init` tạo thường chỉ đoán đúng công nghệ, còn `folders` và `conventions` thì bỏ trống.
+
+Ví dụ hồ sơ đã điền cho một dự án Next.js + Supabase:
+
+```yaml
+---
+name: shop-online
+stack: [Next.js, TypeScript, Supabase]
+folders:                          # mỗi team chỉ sửa được trong các thư mục này
+  backend:  [src/server, supabase]
+  frontend: [src/app, src/components]
+  quality:  [test]
+  devops:   [.github, Dockerfile]
+  design:   [docs/design]
+  security: [docs/security]
+  shared:   []
+commands:                         # lệnh chuẩn của dự án
+  install: npm install
+  test: npm test
+  lint: npm run lint
+  build: npm run build
+allowed_commands: [git status, git diff, npm test, npm run lint, npm run build]
+conventions: |
+  Dùng TypeScript chặt. Component đặt trong src/components, mỗi file một component.
+  Mọi API trả về { data, error }.
+---
 ```
+
+Điều cần nắm:
+
+- `folders`: team nào để `[]` thì **không bị giới hạn thư mục** (vẫn bị nhốt trong worktree và vẫn không đụng được `.env`, `.git`). Khai cho đủ để chặn chặt hơn.
+- `allowed_commands`: **chưa khai thì nhân viên không chạy được lệnh nào, kể cả test.** Chỉ liệt kê lệnh an toàn; mỗi mục khớp cả lệnh đó và lệnh đó kèm đối số (`npm test` khớp `npm test -- --watch=false`). `npm install` mặc định không nằm trong danh sách.
+- `conventions`: quy ước code của dự án, được đưa vào lời nhắc của mọi nhân viên. Viết càng đúng thì kết quả càng ít phải sửa.
+
+**Nhờ AI điền giúp.** Mở Claude Code ở thư mục dự án (không phải `.my-company/`) và dán:
+
+```text
+Hãy đọc codebase của dự án này (cấu trúc thư mục, package.json, các file cấu hình,
+CI nếu có, vài file code tiêu biểu), rồi hoàn thiện file .my-company/local/project.md.
+
+Cụ thể:
+1. Điền `stack` đúng với công nghệ thực tế.
+2. Điền `folders` cho từng team (backend, frontend, quality, devops, design, security)
+   bằng các thư mục THẬT có trong dự án. Team nào không có thư mục phù hợp thì để [].
+3. Điền `commands` và `allowed_commands` bằng các lệnh test, lint, build, typecheck
+   có thật trong dự án (xem package.json hoặc Makefile). Chỉ thêm lệnh chỉ đọc hoặc
+   an toàn, KHÔNG thêm lệnh deploy, push, xóa file, hay lệnh ghi vào cơ sở dữ liệu thật.
+4. Viết `conventions` ngắn gọn (5 đến 10 dòng) từ quy ước thực tế bạn thấy trong code:
+   cách đặt tên, cấu trúc thư mục, cách xử lý lỗi, cách viết test.
+Giữ nguyên định dạng của file (khối --- ở đầu). Sau khi sửa, giải thích từng quyết định.
+```
+
+### Bước 3. Kiểm tra môi trường
+
+```bash
 npm run doctor
 ```
 
-Mọi dòng phải đạt (có `claude` trong PATH, đã đăng nhập, `node` trong PATH cho hook chặn thư mục...).
+Mọi dòng phải ở mức `OK`. Nếu có `LỖI` hoặc `CHÚ Ý`:
 
-**Bước 4. Chạy.**
+| Dòng báo | Cách xử lý |
+|---|---|
+| `Không chạy được "claude"` | Cài Claude Code, mở lại cửa sổ lệnh để PATH cập nhật. Cài ở chỗ lạ thì thêm vào PATH |
+| `Claude Code chưa đăng nhập` / `không phải tài khoản claude.ai` | Chạy `claude`, đăng nhập bằng tài khoản Pro (không dùng khóa API) |
+| `Không tìm thấy lệnh "node" trong PATH` | Cài lại Node.js và bật tùy chọn thêm vào PATH |
+| `Dự án chưa sẵn sàng` | Thư mục dự án chưa là git repo hoặc chưa có commit |
+| `Hồ sơ dự án chưa khai lệnh nào được phép` | Quay lại bước 2, điền `allowed_commands` |
+| `Skill bị đổi hoặc thiếu` | Đừng sửa file trong `skills/library/`; `git checkout skills skills.lock` để khôi phục |
 
-```
+### Bước 4. Chạy
+
+```bash
 npm run start
 ```
 
-Mở http://localhost:4310. Gốc dự án là thư mục cha của `.my-company/`; chạy ở chỗ khác thì thêm `--project <thư mục>` hoặc đặt `COMPANY_PROJECT_ROOT`.
+**Lần đầu chạy** công cụ tự build giao diện (vài chục giây, chỉ một lần). Rồi mở **http://localhost:4310**. Đổi cổng bằng `--port <số>` hoặc `OFFICE_PORT`. Dừng bằng `Ctrl+C`. Muốn sửa giao diện của chính công cụ thì dùng `npm run dev`.
 
-## Cách dùng từng bước
+### Bước 5. Giao việc đầu tiên
 
-Ví dụ: bạn muốn thêm tính năng đăng nhập bằng email.
+Nên thử một việc nhỏ, rủi ro thấp để xem công ty vận hành trước:
 
-### 1. Giao yêu cầu
+1. Tab **Công việc** → **Việc lớn cho 1 team** → bấm **Dùng mẫu có sẵn** → chọn **Kiểm tra build và test** (giao cho team Chất lượng, chỉ chạy lệnh test và báo lại, không sửa code).
+2. Sang tab **Văn phòng**, xem Trưởng nhóm nhận việc, giao cho nhân viên, nhân viên vào phòng server chạy lệnh.
+3. Việc xong thì mở nó ra xem kết quả. Khi hài lòng với việc có sửa code, bấm **Đưa vào dự án** (xem [Lấy kết quả về dự án](docs/HUONG-DAN-CHI-TIET.md#5-lấy-kết-quả-về-dự-án)).
 
-Tab **Công việc**, chọn **Yêu cầu cho công ty**. Điền tiêu đề, mô tả điều bạn muốn và tiêu chí hoàn thành, rồi bấm **Giao cho Giám đốc**. (Việc nhỏ chỉ cần một team hoặc một người thì chọn **Việc lớn cho 1 team** hoặc **Việc lẻ**; có thể bấm **Dùng mẫu có sẵn** để điền nhanh.)
+Hướng dẫn giao việc lớn và yêu cầu cho cả công ty (có ảnh từng bước): [Cách dùng từng bước](docs/HUONG-DAN-CHI-TIET.md#cách-dùng-từng-bước).
 
-![Form giao yêu cầu](docs/images/01-giao-viec.png)
+---
 
-### 2. Duyệt kế hoạch (điểm dừng 1)
+### Cài thêm (tùy chọn)
 
-Giám đốc đọc code, chốt hợp đồng chung (đường dẫn API, dữ liệu vào ra, mã lỗi) và chia việc cho các team. **Chưa duyệt thì chưa ai làm gì.** Đọc kế hoạch rồi bấm **Duyệt kế hoạch**, hoặc ghi nhận xét và bấm **Từ chối, lập lại** (Giám đốc lập lại, tối đa 2 lần).
+#### Duyệt việc từ điện thoại (Tailscale + PIN)
 
-![Kế hoạch chờ duyệt](docs/images/02-duyet-ke-hoach.png)
+> **⚠ Chỗ khó.** Có nhiều mảnh ghép (Tailscale, MagicDNS, HTTPS, hai cổng riêng, PIN) và sai một mảnh là không vào được. Có thể mở lộ máy bạn ra Internet nếu làm sai (đặc biệt `tailscale funnel`).
 
-### 3. Xem công ty làm việc
+Tóm tắt: máy chủ mở **hai cổng**, cổng chính 4310 chỉ cho máy này, cổng từ xa 4311 luôn đòi PIN, và Tailscale **phải trỏ vào cổng từ xa**.
 
-Sang tab **Văn phòng**. Mỗi nhân viên chạy trong worktree và nhánh git riêng; trên màn hình bạn thấy ai đang đọc code, chạy lệnh, sửa file, chờ duyệt bài. Nút **3D | 2D** đổi kiểu vẽ. Bấm vào một người để xem việc của họ.
-
-![Văn phòng 3D](docs/images/03-van-phong-3d.png)
-
-![Văn phòng 2D](docs/images/04-van-phong-2d.png)
-
-Các tab khác cho cùng dữ liệu theo cách khác: **Bảng kanban**, **Tải của team**, **Nhật ký hội thoại** giữa các tầng.
-
-### 4. Duyệt kết quả (điểm dừng 2)
-
-Khi mọi team xong, kết quả được ghép vào nhánh `company/epic<số>`. Giám đốc đọc code, chạy test và báo cáo. Bạn xem báo cáo, bấm **Duyệt kết quả** hoặc **Không duyệt** (kèm lý do).
-
-![Duyệt kết quả](docs/images/05-duyet-ket-qua.png)
-
-### 5. Lấy kết quả về dự án
-
-Công cụ **không bao giờ push**. Xem thay đổi và gộp bằng git như bình thường:
-
-```
-git diff main company/epic<số>        # xem
-git merge company/epic<số>            # lấy về nếu ưng ý
+```bash
+npm run pin -- set                                   # đặt PIN (ít nhất 6 ký tự, nên 8 chữ số)
+COMPANY_PUBLIC_HOST=ten-may.tailnet-xxxx.ts.net npm run start
+tailscale serve --bg 4311                            # KHÔNG dùng tailscale funnel
 ```
 
-(Việc lớn dùng nhánh `company/job<số>`, việc lẻ dùng `company/<tên>-task<số>`.)
+(PowerShell: `$env:COMPANY_PUBLIC_HOST='ten-may.tailnet-xxxx.ts.net'; npm run start`.) Rồi mở `https://ten-may.tailnet-xxxx.ts.net` trên điện thoại. Hướng dẫn đầy đủ từng bước, giới hạn khóa PIN và thông báo đẩy: [Dùng từ xa bằng điện thoại](docs/HUONG-DAN-CHI-TIET.md#dùng-từ-xa-bằng-điện-thoại-tailscale--pin).
 
-### Khi có thứ cần bạn
+**Nhờ AI giúp:**
 
-Khối **Cần bạn quyết** ở đầu trang liệt kê kế hoạch hoặc kết quả đang chờ, việc có xung đột hay vượt giới hạn. Tiêu đề tab hiện số việc chờ và có tiếng chuông nhẹ. Hết hạn mức Pro thì cả công ty nghỉ, tới giờ hạn mức hồi thì tự làm tiếp.
-
-| | |
-|---|---|
-| ![Bảng kanban](docs/images/06-bang-kanban.png) | ![Báo cáo tuần](docs/images/09-bao-cao-tuan.png) |
-| Bảng kanban | Báo cáo tuần (không tốn hạn mức) |
-| ![Mẫu và lịch](docs/images/10-mau-va-lich.png) | ![Trên điện thoại](docs/images/11-dien-thoai.png) |
-| Mẫu việc và việc định kỳ | Duyệt việc từ điện thoại ([hướng dẫn](#dùng-từ-xa-bằng-điện-thoại-tailscale--pin)) |
-
-## Cách hoạt động
-
-- Mỗi việc chạy trong **worktree và nhánh riêng** (`company/<tên>-task<số>`) đặt ở thư mục anh em `<tên-dự-án>-worktrees/`. Công cụ tự commit khi xong và **không bao giờ push**. Xem kết quả bằng `git diff main company/<tên>-task<số>`.
-- Nhân viên chỉ chạy được các lệnh Bash nằm trong `allowed_commands` của hồ sơ dự án. Chưa có hồ sơ thì không chạy được lệnh nào.
-- **Chặn cứng thư mục:** nhân viên chỉ sửa được trong thư mục của team khai ở `folders` của `local/project.md` (hook `server/path-guard.mjs`). Không ai đọc hay sửa được `.env`, `.git` hay file ngoài worktree. Hook gọi lệnh `node`, nên `node` phải có trong PATH (`npm run doctor` kiểm tra).
-
-### Yêu cầu cho cả công ty
-
-1. Bạn giao một **yêu cầu** (tab "Yêu cầu cho công ty"). **Giám đốc** (agent chỉ đọc) đọc code, chốt **hợp đồng chung** nếu yêu cầu cắt ngang nhiều team (đường dẫn API, dữ liệu vào ra, mã lỗi), rồi giao việc cho các team có trong cấu hình (xem bảng team bên dưới). Việc cần kết quả đã ghép của team khác (test tích hợp, rà soát bảo mật) khai `depends_on` các việc kia; việc thiết kế giao diện làm trước và việc Frontend khai `depends_on` nó.
-2. **Điểm dừng 1: bạn duyệt kế hoạch.** Chưa duyệt thì chưa team nào làm gì. Từ chối kèm nhận xét thì Giám đốc lập lại (tối đa 2 lần).
-3. Backend và Frontend làm **song song** (mỗi team chạy như "việc lớn" bên dưới). Chất lượng bắt đầu sau, trên **mã đã ghép** của hai team kia.
-4. Kết quả của cả ba team được ghép vào `company/epic<số>`. Giám đốc đọc code, chạy lệnh test và báo cáo; có lỗi thì được giao **một đợt làm lại**.
-5. **Điểm dừng 2: bạn duyệt kết quả.** Không có gì được push.
-
-Team cần có `teams/management/` (Giám đốc, vai trò `director`) và ít nhất một team có Trưởng nhóm và nhân viên. Hồ sơ dự án nên khai `folders` cho từng team: Trưởng nhóm chỉ giao việc trong thư mục của team mình.
-
-Các team gửi kèm (mỗi team là thư mục trong `teams/`; thân tệp `team.md` là **mô tả phạm vi** mà Giám đốc đọc qua `get_company_overview` để biết khi nào giao việc cho team đó, nên thêm team mới không cần sửa code):
-
-| Team | Người | Làm gì | `folders` gợi ý |
-|------|-------|--------|-----------------|
-| Backend | Minh (lead), An, Bình, Hương | API, cơ sở dữ liệu, migration | `src/server`, `supabase` |
-| Frontend | Lan (lead), Cúc, Dũng, Phong | Giao diện | `src/app`, `src/components` |
-| Chất lượng | Phúc (lead), Quân, Giang | Test tích hợp và e2e trên mã đã ghép | `test` |
-| DevOps | Khôi (lead), Sơn | Chuẩn bị CI/CD, Dockerfile, cấu hình môi trường dạng **tệp**. **Không triển khai**, không chạm hạ tầng thật | `.github`, `infra`, `Dockerfile` |
-| Thiết kế UI/UX | Ngọc (lead), Vy | **Đặc tả** thiết kế (Markdown, token), không viết code giao diện; Frontend làm theo | `design`, `docs/design` |
-| Bảo mật | Hải (lead), Trinh | Rà soát code đã ghép và viết báo cáo; **không sửa code chính** | `docs/security` |
-
-Team Bảo mật dùng skill `differential-review` (Trail of Bits, giấy phép CC BY-SA 4.0, chỉ gồm tài liệu Markdown) và `sharp-edges`. Skill đó gợi ý dùng `git log`, `git blame`; hồ sơ dự án mặc định chỉ cho `git status` và `git diff`, nên muốn người rà soát xem được lịch sử git thì thêm `git log` và `git blame` vào `allowed_commands` trong `local/project.md` (chỉ đọc nên an toàn). Ba skill Trail of Bits còn lại trong kế hoạch ban đầu (`static-analysis`, `supply-chain-risk-auditor`, `insecure-defaults`) **không được nạp**: chúng cần CodeQL, Semgrep hoặc Python có mạng mà nhân viên không chạy được (hoặc không có SKILL.md để nạp).
-
-Giao diện còn có **bảng kanban** (lọc theo team, người), **bảng tải team**, **nhật ký hội thoại** giữa các tầng và **văn phòng 3D**.
-
-### Văn phòng 3D
-
-Mở tab "Văn phòng": kéo chuột để dịch chuyển, cuộn để phóng to, bấm vào một người để xem việc của họ. Nút **3D | 2D** ở đầu khung đổi giữa hai kiểu vẽ (nhớ lựa chọn trong trình duyệt; không có WebGL thì tự dùng 2D). **3D** là cảnh isometric trực giao (camera nhìn chéo từ góc trước phải, không xoay) với nhân vật chibi đầu to, đồ đạc bo tròn, bóng đổ mềm, ánh sáng ấm, và cả khu phố quanh tòa nhà (đường, vạch qua đường, xe, đèn giao thông, cây, nhà xa có cửa sổ sáng đèn ban đêm). **2D** là pixel art nhìn từ trên xuống, 16 px = 1 mét, phóng to không làm mờ, có ban đêm. Cả hai kiểu vẽ dùng chung một bộ mô phỏng nên ai ở đâu, đang làm gì đều giống hệt nhau. Sơ đồ là **một tầng văn phòng đủ chức năng**: **dải sau** là các phòng kính có cửa mở ra lối đi (Chủ, Phòng Giám đốc có bảng trắng, hai phòng họp, Thư viện, Phòng server, phòng Hồ sơ); **giữa** là không gian làm việc mở, mỗi team một khu thảm màu riêng, bàn xếp thành **cụm bốn bàn đối mặt nhau** (hàng bắc quay mặt về phía camera, hàng nam quay lưng), có bàn trống ở chỗ chưa có người, tấm ngăn thấp giữa hai hàng và góc họp có bảng trắng đứng, bàn tròn, cây xanh; **dải trước** là WC, pantry (quầy cà phê, tủ lạnh, bình nước), khu nghỉ có sofa, và sảnh lễ tân có cửa vào. Người đi bộ đi trên mạng lối đi (hai lối ngang và các lối dọc): từ chỗ ngồi đi ngược về phía lưng ghế ra lối đi, từ phòng đi qua cửa; không ai đi xuyên tường hay đụng bàn ghế. Sơ đồ lấy từ cấu hình team (`teams/`), nên thêm người hoặc thêm team thì khu tự co giãn. Vương miện vàng là Trưởng nhóm.
-
-Văn phòng phản ánh công việc thật, không cần mở bảng việc:
-
-| Điều xảy ra | Cảnh trong văn phòng |
-|-------------|----------------------|
-| Bạn giao yêu cầu / việc lớn / việc lẻ | Tờ giấy bay từ bàn Chủ tới Giám đốc, Trưởng nhóm hoặc nhân viên |
-| Giám đốc giao việc cho team, Trưởng nhóm chia việc | Giấy bay từ Giám đốc tới Trưởng nhóm, từ Trưởng nhóm tới từng nhân viên |
-| Giám đốc lập kế hoạch | Giám đốc ra bảng trắng, các phần việc theo màu team hiện dần |
-| Nhân viên đọc code (Read, Grep, Glob) | Đi ra thư viện, bóng nói "Đọc app.ts" |
-| Nhân viên chạy lệnh (Bash) | Vào phòng server, bóng nói "Chạy npm test" |
-| Nhân viên sửa file | Ngồi gõ phím, bóng nói "Sửa login.ts" |
-| Hàng chờ của một người | Chồng giấy trên bàn cao dần theo số việc đang chờ |
-| Người chạm trần tải (1 làm + 2 chờ) | Đèn cam nhấp nháy, toát mồ hôi |
-| Nộp bài, bị trả lại | Giấy xanh bay tới bàn Trưởng nhóm; giấy đỏ bay ngược về nhân viên |
-| Nhân viên hỏi Trưởng nhóm hoặc đồng nghiệp | Giấy vàng bay tới người được hỏi; trả lời xong thì giấy tím bay lại. Người hỏi giơ tay chờ, người trả lời đứng đọc code |
-| Việc vừa lỗi | Đèn đỏ, nhân viên gãi đầu, bóng nói "Việc bị lỗi" (tắt sau 15 phút hoặc khi nhận việc mới) |
-| Kế hoạch hoặc kết quả chờ bạn duyệt, việc cần bạn xử lý | Giám đốc (hoặc Trưởng nhóm) giơ tay, đèn vàng nhấp nháy, đèn trên bàn Chủ nhấp nháy |
-| Việc, việc lớn, yêu cầu xong | Giấy xanh lá bay vào tủ ở phòng Hồ sơ, tóe vài đốm sáng |
-| Hết hạn mức Pro | Cả công ty ra khu nghỉ; bảng hiệu đếm ngược tới lúc hạn mức hồi, hết giờ thì mọi người về bàn |
-| **Không có việc gì** | Nhân viên không ngồi yên: tại bàn thì vươn vai, nhấp cà phê, nhìn quanh; lúc thì đi pha cà phê ở pantry, họp đứng ở phòng họp, ngắm cửa sổ, vào WC, đọc sách ở thư viện, ra khu nghỉ. Không quá 40% số người ra ngoài cùng lúc; có việc được giao là bỏ dở và về bàn ngay |
-
-Đèn trên bàn: xanh lá đang làm, xanh dương chờ Trưởng nhóm duyệt bài, cam có việc đang chờ, cam nhấp nháy quá tải, đỏ vừa lỗi, vàng nhấp nháy chờ bạn quyết, xám rảnh.
-
-**Thông báo:** khi có thứ chờ chính bạn, tiêu đề tab hiện "(2) Cần bạn quyết · My Company" và có một tiếng chuông nhẹ cho việc *mới* (không rung chuông cho thứ đã chờ sẵn lúc bạn mở trang). Nút "Chuông" ở góc trên bật hoặc tắt tiếng, lựa chọn được nhớ trong trình duyệt. Hệ điều hành bật "giảm chuyển động" thì nhân vật dịch chuyển tức thì, giấy không bay, đèn không nhấp nháy.
-
-### Việc lớn cho một team
-
-1. Bạn giao một **việc lớn** cho team (tab "Việc lớn cho team"). **Trưởng nhóm** (agent chỉ đọc) đọc code, xem tải của từng người rồi chia thành các việc con bằng công cụ `assign_to_member`.
-2. Các nhân viên làm **song song**, mỗi người một nhánh riêng. Mỗi người tối đa 1 việc đang làm và 2 việc chờ; việc con phải khai `files` và không được chồng lấn nhau.
-3. Mỗi bài nộp được Trưởng nhóm **duyệt** (`approve`) hoặc **trả lại** (`reject` kèm nhận xét; nhân viên làm tiếp đúng phiên cũ). Tối đa 2 lần trả; quá thì việc con bị đánh dấu chưa đạt.
-4. Khi mọi việc con xong, các nhánh đã duyệt được **gộp** vào `company/job<số>`. Có xung đột hoặc việc con chưa đạt thì việc lớn ở trạng thái "Cần bạn xem". Không có gì được push.
-
-### Nhân viên hỏi nhau
-
-Nhân viên đang làm việc có ba công cụ hỏi (qua MCP của công ty): `ask_lead` (hỏi Trưởng nhóm), `ask_colleague` (hỏi một đồng nghiệp cùng team), `call_meeting` (hỏi cùng một câu cho Trưởng nhóm và tối đa 2 đồng nghiệp, mỗi người trả lời riêng). Lời nhắc dặn chỉ hỏi khi **vướng thật** (đề bài mâu thuẫn, không đoán được từ code), không hỏi để xin duyệt hay thăm dò.
-- **Không chờ trong tiến trình**: `claude -p` không chờ được, nên sau khi hỏi nhân viên kết thúc lượt của mình. Việc chuyển sang trạng thái **"Chờ trả lời"** (chưa nộp bài, chưa commit, vẫn tính vào tải của người đó). Mỗi người được hỏi nhận một lượt **trả lời** ngắn: chỉ đọc code (Read, Grep, Glob) trong thư mục làm việc của người hỏi, không công cụ MCP, không Bash, tối đa 8 lượt và 5 phút. Lượt trả lời không phải chờ người được hỏi xong việc dài của họ. Có đủ câu trả lời thì nhân viên được gọi lại bằng `--resume` kèm các câu trả lời.
-- **Không ai bị kẹt**: người trả lời lỗi, treo quá 5 phút, bị dừng hay trả lời rỗng thì câu hỏi tính là "không trả lời được" và người hỏi tự quyết theo tiêu chí, ghi giả định vào "Điều còn dang dở". Dừng việc đang chờ thì mọi câu hỏi mở bị hủy và lượt trả lời dừng theo. Máy chủ khởi động lại giữa chừng thì tự khớp lại câu hỏi với các lượt trả lời đã kết thúc.
-- **Giới hạn do máy chủ ép**: 2 lần hỏi mỗi việc (một cuộc họp tính một lần), 600 ký tự mỗi câu, chỉ hỏi người cùng team, không tự hỏi mình, khóa bí mật trong câu hỏi bị che. Mã thông báo của nhân viên chỉ gọi được ba công cụ hỏi, hết hiệu lực khi lượt chạy kết thúc.
-- Câu hỏi và trả lời hiện trong nhật ký hội thoại và trong lịch sử của việc; báo cáo tuần đếm lượt trả lời riêng, không lẫn vào lượt của Trưởng nhóm.
-
-Hồ sơ dự án có thể khai `worktree_links: [node_modules]` để nối thư mục phụ thuộc của dự án vào mỗi worktree (mặc định là `node_modules`, không bị commit).
-- **Độ khó tự động:** mặc định hệ thống tự đánh giá độ khó của việc (một lần gọi `haiku` nhỏ) rồi chọn model: Đơn giản dùng `haiku`, Bình thường theo vai trò, Khó dùng `opus`. Việc hết số lượt mà chưa xong thì tự nâng một bậc và làm tiếp. Bạn có thể ép một mức khi giao việc. Không có model `fable`.
-- Tối đa 2 agent chạy cùng lúc (`COMPANY_MAX_CONCURRENT`), mỗi nhân viên một việc một lúc.
-- **Hết hạn mức Pro:** việc đang dở được lưu, cả công ty nghỉ đến giờ hạn mức hồi (đọc từ sự kiện `rate_limit_event`), rồi tự làm tiếp bằng `--resume`. Không dùng API.
-- Máy chủ chỉ nghe ở `127.0.0.1` và từ chối yêu cầu có `Host` hoặc `Origin` lạ.
-
-### Mẫu việc và việc định kỳ
-
-Tab **"Mẫu & lịch"** và ô **"Dùng mẫu có sẵn"** trong các form giao việc.
-- **Mẫu việc** là tệp `templates/<id>.md` (frontmatter: `name`, `kind: epic|job`, `team` cho job, `fields` là các ô cần điền, `title`, `acceptance`; thân tệp là nội dung giao việc, có chỗ điền `{{khóa}}`). Có sẵn bốn mẫu: Sửa lỗi, Viết tính năng, Viết báo cáo hoặc tài liệu, Kiểm tra build và test. Mẫu riêng của bạn đặt trong `local/templates/` (cùng tên thì ghi đè mẫu gốc; mẫu hỏng bị bỏ qua và báo lỗi, không làm hỏng mẫu khác). Giá trị bạn nhập không bao giờ bị diễn giải lại như mẫu.
-- **Việc định kỳ**: chọn mẫu, giờ chạy (giờ máy), các thứ trong tuần, tối đa mấy lần mỗi ngày. **Lịch tạo ra luôn tắt**, bạn bật tay. Khi bật, đến giờ công ty tự giao việc và việc đó tốn hạn mức Pro dù bạn không có mặt, nên có các chốt: mỗi lịch chỉ có **một lần chạy đang mở** (lần trước chưa xong hoặc đang chờ bạn xem thì không giao thêm), **bỏ qua khi công ty đang tạm dừng** (hết hạn mức hoặc bạn bấm nhường chỗ), **trần số lần mỗi ngày** (mặc định 2), lỡ giờ vì máy tắt thì **chạy bù một lần** nếu còn trong 3 giờ (quá thì bỏ lượt, không bù dồn), giao lỗi thì ghi lại và thử lại sau 10 phút. Mẫu kiểu việc lớn giao thẳng cho team; mẫu kiểu yêu cầu vẫn dừng ở bước chờ bạn duyệt kế hoạch. Máy chủ phải đang chạy thì lịch mới chạy.
-
-### Báo cáo tuần
-
-Tab **"Báo cáo"** (và `GET /api/report?week=2026-W45`, thêm `&format=md` để tải Markdown). Tuần theo chuẩn ISO (thứ Hai đến Chủ nhật, giờ máy); việc tính vào tuần chứa lúc nó kết thúc. Báo cáo chỉ đọc dữ liệu đã có nên không tốn hạn mức: số việc xong, bị trả bài, lỗi, thời gian chạy, token, theo từng team và từng người (xếp hạng "ai làm nhiều nhất" chỉ tính việc làm của nhân viên; lượt lập kế hoạch và duyệt bài của Trưởng nhóm, Giám đốc đếm riêng), so với tuần trước, cùng mức dùng hạn mức Pro. "Giá API ước tính" chỉ để so sánh giữa các team, bạn dùng gói Pro nên không bị tính khoản đó. Mức dùng hạn mức được ghi từ khi có chức năng này (mỗi 10 phút một mẫu, và luôn ghi lúc chạm trần hoặc hết chặn), nên các tuần trước đó hiện "chưa có dữ liệu hạn mức".
-
-### Dùng từ xa bằng điện thoại (Tailscale + PIN)
-
-Mặc định công ty chỉ nghe ở `127.0.0.1` nên chỉ trình duyệt trên chính máy này vào được. Muốn duyệt kế hoạch hoặc xem tiến độ từ điện thoại, dùng **Tailscale** (mạng riêng, HTTPS có sẵn). Từ xa có thể duyệt việc rồi chạy mã trên máy bạn, nên có hai lớp chắn: chỉ thiết bị trong mạng Tailscale của bạn tới được, và phải nhập **PIN**.
-
-Máy chủ mở **hai cổng riêng**: cổng chính (4310) chỉ cho trình duyệt trên máy này và không cần PIN; cổng từ xa (4311) luôn đòi PIN. Tailscale **phải trỏ vào cổng từ xa**, không phải cổng chính. Làm một lần:
-
-1. Cài Tailscale trên máy tính và điện thoại, đăng nhập cùng một tài khoản. Trong trang quản trị Tailscale bật **MagicDNS** và **HTTPS Certificates**.
-2. Đặt PIN (nhập hai lần, không hiện ra màn hình): `npm run pin -- set`. Ít nhất 6 ký tự, nên dùng 8 chữ số trở lên; PIN quá yếu (123456, 000000...) bị từ chối. Đổi PIN hoặc `npm run pin -- clear` sẽ đăng xuất mọi thiết bị.
-3. Cho biết tên máy của bạn trong Tailscale (dạng `ten-may.tailnet-xxxx.ts.net`, xem trong ứng dụng Tailscale) rồi chạy: `COMPANY_PUBLIC_HOST=ten-may.tailnet-xxxx.ts.net npm run start` (Windows PowerShell: `$env:COMPANY_PUBLIC_HOST='...'; npm run start`). Dòng "Từ xa: https://..." hiện ra là cổng từ xa đã bật.
-4. Chạy `tailscale serve --bg 4311` (số này là cổng từ xa, đổi bằng `COMPANY_REMOTE_PORT`). **Không dùng `tailscale funnel`**: funnel mở ra cả Internet, còn PIN chỉ nên là lớp thứ hai.
-5. Trên điện thoại mở `https://ten-may.tailnet-xxxx.ts.net`, nhập PIN. Muốn dùng như ứng dụng: menu trình duyệt, "Thêm vào màn hình chính".
-
-`npm run doctor` kiểm tra việc này. Những điều cần biết:
-- Nhập sai PIN 5 lần trong 15 phút thì **khóa 15 phút** (lần khóa kế tiếp gấp đôi, tối đa 24 giờ), đang khóa thì PIN đúng cũng bị từ chối. Khóa tính chung cho mọi người vì qua Tailscale mọi yêu cầu đều tới từ cùng một địa chỉ; hệ quả là ai đó trong mạng của bạn cố tình nhập sai cũng khiến bạn không vào được từ xa, nhưng bạn vẫn vào bình thường bằng cổng chính trên máy tính.
-- Phiên đăng nhập 30 ngày (cookie `HttpOnly`, `Secure`, `SameSite=Strict`); trong cơ sở dữ liệu chỉ lưu băm của mã phiên. Có nút **Đăng xuất** ở đầu trang. PIN chỉ lưu dạng băm scrypt có muối trong `data/auth.json`.
-- Cổng từ xa không phục vụ `/api/agent/*` (cầu nối của Trưởng nhóm), không có WebSocket, và chưa đăng nhập thì chỉ thấy trang nhập PIN (không tải được mã giao diện).
-- Cổng chính từ chối yêu cầu có tiêu đề proxy (`X-Forwarded-*`...) để nếu lỡ trỏ nhầm Tailscale vào cổng chính thì vẫn không lọt vào được. Đừng dựa vào đó: trỏ đúng cổng từ xa.
-- Chỉ dùng `https://` (cookie `__Host-` bị trình duyệt bỏ qua trên `http`).
-
-### Thông báo khi có việc chờ bạn
-
-Nút **"Thông báo"** ở đầu trang (mỗi thiết bị bật riêng). Máy chủ báo khi có việc *mới chuyển sang* chờ chính bạn: duyệt kế hoạch, duyệt kết quả, việc cần xem (xung đột, vượt giới hạn), và khi hạn mức đã hồi. Cùng quy tắc với khối "Cần bạn quyết"; một yêu cầu chỉ báo một lần mỗi lần chờ (bị trả lại rồi lập lại kế hoạch thì báo lại), mở lại trang hay khởi động lại máy chủ không báo lại việc đã chờ sẵn.
-
-- **Bật** (cần cho phép thông báo trong trình duyệt): nếu trình duyệt hỗ trợ và địa chỉ là HTTPS hoặc `localhost` thì đăng ký **thông báo đẩy**, nhận được cả khi đã đóng trang. Không thì chuyển sang chế độ "khi mở trang" (báo khi bạn đang ở tab khác).
-- **Gửi thử** (hiện khi đang ở chế độ đẩy): gửi một thông báo ngay để biết thiết bị nhận được chưa. Trên điện thoại hãy bấm cái này sau khi bật.
-- **iPhone**: Safari chỉ cho thông báo đẩy khi đã "Thêm vào Màn hình chính" và mở từ biểu tượng đó (iOS 16.4 trở lên).
-- Đăng ký đẩy của thiết bị vào qua cổng từ xa gắn với phiên đăng nhập: đăng xuất, hết hạn hoặc đổi PIN thì thiết bị đó **thôi nhận** ngay; đăng nhập lại và mở trang là tự đăng ký lại. Thiết bị trên máy chính không phụ thuộc phiên.
-- Nội dung chỉ gồm tiêu đề ngắn (đã che bí mật) và được mã hóa đầu-cuối nên Google/Apple/Mozilla không đọc được. Máy chủ chỉ gửi tới các dịch vụ đẩy đã biết (FCM, Mozilla, Windows, Apple); dịch vụ khác thêm bằng `COMPANY_PUSH_HOSTS` (hiếm khi cần). Khóa VAPID tự tạo ở `data/vapid.json`; xóa tệp này thì mọi thiết bị phải bật lại.
-- Giới hạn: tối đa 20 thiết bị, tối đa 20 thông báo mỗi 10 phút.
-
-## Cấu hình
-
-| Nơi | Nội dung |
-|-----|----------|
-| `teams/<team>/team.md` | Trưởng nhóm, thành viên, giới hạn (tải mỗi người, số lần trả bài, số việc con tối đa) |
-| `teams/<team>/<vai-trò>.md` | Model, mức suy luận, công cụ, skill, quy tắc theo công nghệ, chỉ dẫn. Trưởng nhóm có thêm `review_model` (duyệt bài nhẹ hơn lập kế hoạch) |
-| `local/project.md` | Hồ sơ dự án (không commit) |
-| `local/teams/` | Đè đội hình theo từng dự án (không commit) |
-| `skills/library/` + `skills.lock` | Skill đã duyệt, kèm mã băm để phát hiện bị sửa |
-
-Biến môi trường: `OFFICE_PORT` (4310), `COMPANY_PUBLIC_HOST` (tên máy Tailscale, bật cổng từ xa), `COMPANY_REMOTE_PORT` (4311), `COMPANY_PUSH_HOSTS` (dịch vụ thông báo đẩy thêm, hiếm khi cần), `COMPANY_MAX_CONCURRENT` (2), `COMPANY_DATA_DIR`, `COMPANY_LOCAL_DIR`, `COMPANY_WORKTREES_DIR`, `COMPANY_PROJECT_ROOT`.
-
-## Skill từ GitHub
-
-Chỉ skill đã được duyệt và ghi trong `skills.lock` mới được nạp; sửa nội dung sau khi duyệt thì bị từ chối.
-
+```text
+Hãy đọc README.md và docs/HUONG-DAN-CHI-TIET.md trong .my-company/, đặc biệt mục
+"Dùng từ xa bằng điện thoại", cùng server/index.mjs, server/auth.mjs, server/config.mjs.
+Sau đó hướng dẫn tôi từng bước bật truy cập từ xa bằng Tailscale trên máy Windows này.
+Kiểm tra giúp tôi từng bước bằng `npm run doctor` và `tailscale status`, và nhắc tôi
+tuyệt đối không dùng `tailscale funnel`.
 ```
+
+#### Chụp ảnh giao diện cho cuộc thi skill
+
+Chỉ cần khi dùng tính năng [Thi đấu skill](docs/HUONG-DAN-CHI-TIET.md#thi-đấu-skill-so-sánh-hai-bộ-skill). Thêm vào `local/project.md` cách chạy bản xem thử (`{port}` được thay bằng một cổng trống):
+
+```yaml
+preview:
+  command: npm run dev -- --port {port}
+  url: http://localhost:{port}
+  pages: [/, /login]
+  wait_seconds: 90
+```
+
+Cần Edge hoặc Chrome trên máy (đặt `COMPANY_BROWSER` nếu cài ở chỗ lạ). **Nhờ AI giúp:** *"Đọc package.json và cấu hình của dự án rồi viết mục `preview` cho `.my-company/local/project.md`: lệnh nào chạy dev server theo cổng `{port}`, và 1 đến 3 trang tiêu biểu để chụp."*
+
+#### Thêm team, đổi nhân viên, đổi model
+
+Mỗi team là một thư mục trong `teams/`. Sửa `team.md` (thành viên, giới hạn) và file vai trò (model, công cụ, skill, chỉ dẫn). Muốn đổi cho riêng dự án này mà không đụng bản gốc, đặt bản ghi đè vào `local/teams/`. **Nhờ AI giúp:** *"Đọc thư mục teams/ và server/teams.mjs trong .my-company/, rồi tạo một team mới tên X gồm các vai trò Y theo đúng định dạng hiện có."*
+
+#### Cài skill từ GitHub
+
+```bash
 npm run skills list
-npm run skills verify
-npm run skills add <owner/repo/đường/dẫn> -- --exclude <file,thư mục> --yes
+npm run skills add <owner/repo/đường/dẫn> -- --yes
 ```
 
-`skills add` tải đúng một commit vào `data/quarantine/` và liệt kê file (đánh dấu script, hook, nhị phân). **Hãy đọc `SKILL.md` và mọi script ở đó trước khi duyệt.** Sau đó thêm tên skill vào danh sách `skills` hoặc `stack_skills` trong file vai trò.
+Skill được tải vào khu cách ly, **hãy tự đọc `SKILL.md` và mọi script ở đó trước khi duyệt**. Chi tiết: [Skill từ GitHub](docs/HUONG-DAN-CHI-TIET.md#skill-từ-github).
 
-Skill thiết kế và công cụ đã duyệt thêm theo yêu cầu (6/11/2026):
+### Biến môi trường
 
-| Skill | Nguồn | Ai nạp |
-|-------|-------|--------|
-| `impeccable` | pbakaus/impeccable (Apache-2.0), **đã bỏ thư mục `scripts/`** | Frontend, luôn nạp |
-| `design-taste-frontend`, `redesign-existing-projects` | tasteskill/tasteskill (MIT) | Frontend, khi stack có Tailwind (tự nhận từ `package.json`) |
-| `headroom` | headroomlabs-ai/headroom (Apache-2.0) | Backend, khi stack trong `local/project.md` có "LLM" |
-| `agent-desktop`, `agent-desktop-windows` | vercel-labs/agent-desktop (Apache-2.0) | **Không ai nạp mặc định** (xem ghi chú trong `teams/quality/qa.md`) |
-| `differential-review` | trailofbits/skills (CC BY-SA 4.0), bỏ thư mục `agents/` và `assets/` | Bảo mật |
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `OFFICE_PORT` | 4310 | Cổng giao diện |
+| `COMPANY_PROJECT_ROOT` | thư mục cha của công cụ | Gốc dự án |
+| `COMPANY_MAX_CONCURRENT` | 2 | Số agent chạy cùng lúc |
+| `COMPANY_PUBLIC_HOST` | (tắt) | Tên máy Tailscale, bật cổng từ xa |
+| `COMPANY_REMOTE_PORT` | 4311 | Cổng từ xa |
+| `COMPANY_BROWSER` | tự tìm Edge/Chrome | Trình duyệt để chụp ảnh |
+| `COMPANY_DATA_DIR`, `COMPANY_LOCAL_DIR`, `COMPANY_WORKTREES_DIR` | trong thư mục công cụ | Nơi lưu dữ liệu, cấu hình riêng, worktree |
+
+### Lỗi thường gặp
+
+| Hiện tượng | Nguyên nhân thường gặp |
+|---|---|
+| Nhân viên báo không chạy được lệnh | `allowed_commands` thiếu lệnh đó |
+| Nhân viên không sửa được file | File nằm ngoài `folders` của team đó, hoặc là `.env`/`.git` |
+| **Đưa vào dự án** bị từ chối | Thư mục dự án còn file sửa chưa commit: commit hoặc `git stash` rồi bấm lại |
+| Cả công ty đứng yên, có bảng đếm ngược | Hết hạn mức gói Pro; tự làm tiếp khi hạn mức hồi |
+| Việc báo "Lỗi" | Mở việc đó, khối **Việc bị lỗi** nói rõ vì sao và cho chọn cách cứu |
+| Điện thoại không vào được | Tailscale đang trỏ vào cổng chính thay vì cổng từ xa, hoặc chưa đặt PIN, hoặc dùng `http` thay vì `https` |
 
 ## Phát triển
 
-```
-npm test          # 211 bài kiểm thử, dùng claude giả (tests/fixtures/fake-claude.mjs), không tốn hạn mức
+```bash
+npm test          # 279 bài kiểm thử, dùng claude giả (tests/fixtures/fake-claude.mjs), không tốn hạn mức
 npm run lint
 npm run typecheck
 npm run dev       # giao diện chạy chế độ phát triển
@@ -268,4 +301,4 @@ npm run dev       # giao diện chạy chế độ phát triển
 
 Mã nguồn của dự án này phát hành theo [giấy phép MIT](LICENSE): bạn được dùng, sửa, phân phối và dùng cho mục đích thương mại, miễn là giữ nguyên thông báo bản quyền.
 
-Các skill trong `skills/library/` là của tác giả gốc và **giữ giấy phép riêng** của họ (Apache-2.0, MIT, CC BY-SA 4.0 như bảng ở mục "Skill từ GitHub"). Giấy phép MIT của dự án không áp dụng cho các skill đó.
+Các skill trong `skills/library/` là của tác giả gốc và **giữ giấy phép riêng** của họ (Apache-2.0, MIT, CC BY-SA 4.0; xem bảng ở mục [Skill từ GitHub](docs/HUONG-DAN-CHI-TIET.md#skill-từ-github) của hướng dẫn chi tiết). Giấy phép MIT của dự án không áp dụng cho các skill đó.

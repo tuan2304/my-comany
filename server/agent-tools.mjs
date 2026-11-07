@@ -6,7 +6,7 @@
  * Mỗi công cụ chỉ dùng được ở một số loại lượt làm việc (kind):
  *   plan (Trưởng nhóm lập kế hoạch), review (Trưởng nhóm duyệt bài),
  *   dplan (Giám đốc lập kế hoạch), dreview (Giám đốc kiểm tra kết quả).
- * Nhân viên (kind work) chỉ có các công cụ hỏi (ask_lead, ask_colleague, call_meeting); bài nộp vẫn là báo cáo cuối của họ.
+ * Nhân viên (kind work) chỉ có các công cụ hỏi (ask_lead, ask_colleague, call_meeting, ask_owner); bài nộp vẫn là báo cáo cuối của họ.
  * `run` nhận ctx = { jobs, epics, questions }, lượt làm việc (task) và tham số.
  */
 
@@ -47,6 +47,26 @@ export const TOOLS = {
       additionalProperties: false,
     },
     run: (ctx, task, args) => ctx.jobs.assign(task, args),
+  },
+  assign_contest: {
+    kinds: ['plan'],
+    description:
+      'CHỈ cho việc lớn thi đấu skill: giao CÙNG MỘT việc cho HAI nhân viên khác nhau để so sánh hai cách làm. Gọi đúng một lần. ' +
+      'Hệ thống tự gán ngẫu nhiên bộ skill cho từng người và ẩn danh khi chủ chọn. Được phép để hai người cùng sửa một phạm vi file (mỗi người một nhánh riêng, chỉ một nhánh được gộp).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        members: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2, description: 'Tên HAI nhân viên khác nhau (lấy từ get_team_workload).' },
+        title: { type: 'string', description: 'Tiêu đề ngắn của việc.' },
+        description: { type: 'string', description: 'Đề bài đầy đủ, dùng chung cho cả hai người. Không gợi ý phong cách thiết kế.' },
+        acceptance: { type: 'string', description: 'Tiêu chí hoàn thành kiểm chứng được, dùng chung cho cả hai.' },
+        files: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'File hoặc thư mục mà cả hai cùng sửa.' },
+        level: { type: 'string', enum: ['easy', 'normal', 'hard'], description: 'Độ khó, áp cho cả hai để công bằng. Bỏ trống là normal.' },
+      },
+      required: ['members', 'title', 'description', 'files'],
+      additionalProperties: false,
+    },
+    run: (ctx, task, args) => ctx.jobs.assignContest(task, args),
   },
   review_submission: {
     kinds: ['review'],
@@ -96,6 +116,23 @@ export const TOOLS = {
       additionalProperties: false,
     },
     run: (ctx, task, args) => ctx.questions.ask(task, { kind: 'colleague', member: args.member, question: args.question }),
+  },
+  ask_owner: {
+    kinds: ['work'],
+    description:
+      'Hỏi CHÍNH CHỦ CÔNG TY (người thật) MỘT câu, chỉ khi cần một quyết định mà Trưởng nhóm và đồng nghiệp không quyết thay được ' +
+      '(chọn giữa hai hướng đều hợp lý, đổi phạm vi, rủi ro mất dữ liệu, chi phí). Chủ có thể trả lời sau vài giờ nên đừng dùng cho điều nhỏ. ' +
+      'Nên kèm 2 đến 4 phương án để chủ chọn nhanh. Sau khi gọi, hãy KẾT THÚC lượt này ngay bằng một câu ngắn; hệ thống sẽ gọi bạn lại cùng câu trả lời. Mỗi việc chỉ được hỏi chủ 1 lần.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'Câu hỏi cụ thể, tự chứa đủ bối cảnh, tối đa 600 ký tự.' },
+        options: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Các phương án để chủ chọn (mỗi phương án ngắn gọn, tối đa 120 ký tự).' },
+      },
+      required: ['question'],
+      additionalProperties: false,
+    },
+    run: (ctx, task, args) => ctx.questions.ask(task, { kind: 'owner', question: args.question, options: args.options }),
   },
   call_meeting: {
     kinds: ['work'],

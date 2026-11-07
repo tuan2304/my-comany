@@ -15,6 +15,9 @@ import { findMember, workersOf } from './teams.mjs';
 export const MAX_ROUNDS = 2;
 export const MAX_TEXT = 600;
 export const MAX_MEETING = 3;
+export const OWNER_NAME = 'Chủ công ty';
+const MAX_OPTIONS = 4;
+const MAX_OPTION_TEXT = 120;
 const MAX_ANSWER = 2000;
 export const ANSWER_MAX_TURNS = 8;
 
@@ -54,7 +57,7 @@ export class Questions {
     return [target];
   }
 
-  ask(task, { kind, member = null, question }) {
+  ask(task, { kind, member = null, question, options = null }) {
     if (task.kind !== 'work') throw new UserError('Chỉ nhân viên đang làm việc mới được hỏi.');
     const text = maskSecrets(String(question ?? '').trim());
     if (!text) throw new UserError('Thiếu nội dung câu hỏi.');
@@ -63,6 +66,7 @@ export class Questions {
     if (rounds >= MAX_ROUNDS) {
       throw new UserError(`Bạn đã hỏi ${rounds}/${MAX_ROUNDS} lần cho việc này. Hãy tự quyết theo tiêu chí hoàn thành và ghi giả định vào "Điều còn dang dở".`);
     }
+    if (kind === 'owner') return this.askOwner(task, text, options, rounds + 1);
     const asker = findMember(this.r.getTeams(), task.member);
     if (!asker) throw new UserError('Không tìm thấy bạn trong cấu hình team.');
     const targets = this.targetsFor(asker, kind, member);
@@ -82,6 +86,45 @@ export class Questions {
       '(ví dụ "Đang chờ trả lời"); hệ thống sẽ gọi bạn lại cùng câu trả lời để làm tiếp. Lần hỏi này là ' +
       `${round}/${MAX_ROUNDS}.`
     );
+  }
+
+  /** Hỏi chính chủ công ty (người thật): chỉ một lần mỗi việc, không có lượt trả lời tự động; câu hỏi nằm chờ cho tới khi chủ trả lời hoặc bỏ qua. */
+  askOwner(task, text, rawOptions, round) {
+    if (this.store.questionsOf(task.id).some((q) => q.kind === 'owner')) {
+      throw new UserError('Bạn đã hỏi chủ công ty một lần cho việc này rồi. Hãy tự quyết theo tiêu chí hoàn thành và ghi giả định vào "Điều còn dang dở".');
+    }
+    const options = (Array.isArray(rawOptions) ? rawOptions : [])
+      .map((o) => maskSecrets(String(o ?? '').trim()))
+      .filter(Boolean)
+      .slice(0, MAX_OPTIONS)
+      .map((o) => shorten(o, MAX_OPTION_TEXT));
+    const q = this.store.createQuestion({ taskId: task.id, round, kind: 'owner', asker: task.member, target: OWNER_NAME, text, options });
+    this.r.update(task.id, { ask_owner_id: q.id });
+    this.r.log(task.id, 'question', `Hỏi ${OWNER_NAME}: ${shorten(text, 300)}${options.length ? ` (phương án: ${options.join(' / ')})` : ''}`);
+    return (
+      'Đã gửi câu hỏi cho chủ công ty (người thật, có thể trả lời sau vài giờ). KHÔNG làm tiếp phần phụ thuộc vào câu trả lời. Hãy kết thúc lượt này ngay bằng một câu ngắn ' +
+      '(ví dụ "Đang chờ chủ trả lời"); hệ thống sẽ gọi bạn lại cùng câu trả lời để làm tiếp.'
+    );
+  }
+
+  /** Chủ trả lời (hoặc bỏ qua để nhân viên tự quyết) một câu hỏi đang chờ. */
+  answerOwner(questionId, { answer = '', decline = false } = {}) {
+    const q = this.store.getQuestion(questionId);
+    if (!q || q.kind !== 'owner') throw new UserError('Không có câu hỏi này.');
+    if (q.status !== 'open') throw new UserError('Câu hỏi này đã có kết cục rồi (đã trả lời, hoặc việc đã dừng).');
+    if (decline) {
+      this.store.updateQuestion(q.id, { status: 'failed', answered_at: Date.now() });
+      this.r.log(q.task_id, 'answer', `${OWNER_NAME} để bạn tự quyết.`);
+    } else {
+      const text = maskSecrets(String(answer ?? '').trim());
+      if (!text) throw new UserError('Hãy nhập câu trả lời, hoặc chọn "Để nhân viên tự quyết".');
+      if (text.length > MAX_ANSWER) throw new UserError(`Câu trả lời dài ${text.length} ký tự, tối đa ${MAX_ANSWER}.`);
+      this.store.updateQuestion(q.id, { status: 'answered', answer: text, answered_at: Date.now() });
+      this.r.log(q.task_id, 'answer', `${OWNER_NAME} trả lời: ${shorten(text, 300)}`);
+    }
+    if (this.store.getTask(q.task_id)?.ask_owner_id === q.id) this.r.update(q.task_id, { ask_owner_id: null });
+    this.wake(q.task_id);
+    return this.store.getQuestion(q.id);
   }
 
   createAnswerTask({ asker, target, text, kind, count }) {
@@ -159,6 +202,7 @@ export class Questions {
   cancelFor(taskId) {
     for (const q of this.store.openQuestions(taskId)) {
       this.store.updateQuestion(q.id, { status: 'failed', answered_at: Date.now() });
+      if (q.kind === 'owner') this.r.update(taskId, { ask_owner_id: null });
       const answerTask = q.answer_task_id ? this.store.getTask(q.answer_task_id) : null;
       if (answerTask && ['queued', 'running', 'paused_quota'].includes(answerTask.status)) this.r.stop(answerTask.id);
     }
@@ -167,6 +211,7 @@ export class Questions {
   /** Khởi động lại máy chủ: khớp câu hỏi với lượt trả lời đã kết thúc trong lúc tắt, rồi đánh thức việc đang chờ. */
   reconcile() {
     for (const q of this.store.openQuestions()) {
+      if (q.kind === 'owner') continue; // câu hỏi cho chủ không có lượt trả lời tự động: cứ chờ chủ
       const answerTask = q.answer_task_id ? this.store.getTask(q.answer_task_id) : null;
       if (!answerTask) this.store.updateQuestion(q.id, { status: 'failed', answered_at: Date.now() });
       else this.afterAnswerEnds(answerTask);

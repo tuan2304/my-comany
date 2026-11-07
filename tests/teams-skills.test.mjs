@@ -148,7 +148,7 @@ test('skill chỉ được nạp khi đã duyệt và còn nguyên vẹn', () =>
   }
 });
 
-test('skill thiết kế và nén ngữ cảnh gán đúng vai trò theo công nghệ; skill chạy chương trình ngoài không nạp mặc định', () => {
+test('skill thiết kế và nén ngữ cảnh gán đúng vai trò theo công nghệ; skill điều khiển máy chỉ QA nạp', () => {
   const teams = loadTeams({ teamsDir: path.join(REPO, 'teams') });
   const lockFile = path.join(REPO, 'skills.lock');
   const libraryDir = path.join(REPO, 'skills', 'library');
@@ -157,14 +157,17 @@ test('skill thiết kế và nén ngữ cảnh gán đúng vai trò theo công n
     const roleOf = (member) => findMember(teams, member).role;
     const loadedFor = (member, stack) => composeSkillPack({ libraryDir, lockFile, role: roleOf(member), project: { stack }, outDir: path.join(dir, `${member}-${stack.join('_')}`) });
 
-    // Frontend: luôn có impeccable; dự án Tailwind có thêm hai skill thiết kế; dự án không dùng Tailwind thì không bị áp kiểu Tailwind.
+    // Frontend: luôn có impeccable; dự án React/Next có thêm react-best-practices và composition-patterns.
     const plain = loadedFor('Cúc', ['React']);
     assert.ok(plain.loaded.includes('impeccable'));
-    assert.ok(plain.loaded.includes('react-best-practices'));
-    assert.equal(plain.loaded.includes('design-taste-frontend'), false, 'design-taste-frontend áp Tailwind nên chỉ nạp khi dự án dùng Tailwind');
-    const tw = loadedFor('Cúc', ['React', 'Tailwind CSS']);
-    assert.ok(tw.loaded.includes('design-taste-frontend') && tw.loaded.includes('redesign-existing-projects'));
-    assert.deepEqual(tw.skipped, [], 'mọi skill được gán đều đã duyệt và còn nguyên vẹn');
+    assert.ok(plain.loaded.includes('react-best-practices') && plain.loaded.includes('composition-patterns'));
+    assert.deepEqual(plain.skipped, [], 'mọi skill được gán đều đã duyệt và còn nguyên vẹn');
+    // redesign-existing-projects trùng với impeccable nên đã gỡ. design-taste-frontend được giữ lại trong thư viện (đã duyệt)
+    // để đem ra thi đấu với impeccable, nhưng KHÔNG nạp mặc định cho ai.
+    assert.equal(fs.existsSync(path.join(libraryDir, 'redesign-existing-projects')), false);
+    assert.equal(readLock(lockFile).skills['redesign-existing-projects'], undefined);
+    assert.ok(readLock(lockFile).skills['design-taste-frontend'], 'design-taste-frontend phải còn trong skills.lock');
+    assert.equal(plain.loaded.includes('design-taste-frontend'), false, 'không nạp mặc định');
 
     // impeccable được cài bản không có scripts/ (chương trình tự tải về, hook, trình duyệt trực tiếp).
     const impeccable = path.join(libraryDir, 'impeccable');
@@ -176,10 +179,13 @@ test('skill thiết kế và nén ngữ cảnh gán đúng vai trò theo công n
     assert.equal(loadedFor('An', ['Node.js']).loaded.includes('headroom'), false);
     assert.ok(loadedFor('An', ['Node.js', 'LLM app']).loaded.includes('headroom'));
 
-    // agent-desktop điều khiển giao diện máy tính thật: đã duyệt nhưng không vai trò nào nạp mặc định.
-    for (const member of ['An', 'Cúc', 'Quân', 'Minh', 'Hòa']) {
+    // Theo quyết định của chủ công ty: QA nạp cả webapp-testing và hai skill agent-desktop; các vai trò khác thì không.
+    const qaSkills = loadedFor('Quân', ['React']);
+    for (const n of ['webapp-testing', 'agent-desktop', 'agent-desktop-windows']) assert.ok(qaSkills.loaded.includes(n), `QA phải nạp ${n}`);
+    assert.deepEqual(qaSkills.skipped, [], 'mọi skill của QA đã duyệt và còn nguyên vẹn');
+    for (const member of ['An', 'Cúc', 'Minh', 'Hòa']) {
       const loaded = loadedFor(member, ['React', 'Tailwind CSS', 'LLM app', 'Supabase']).loaded;
-      assert.equal(loaded.some((n) => n.startsWith('agent-desktop')), false, `${member} không được nạp agent-desktop mặc định`);
+      assert.equal(loaded.some((n) => n.startsWith('agent-desktop') || n === 'webapp-testing'), false, `${member} không được nạp skill điều khiển máy`);
     }
     const lock = readLock(lockFile);
     assert.ok(lock.skills['agent-desktop'] && lock.skills['agent-desktop-windows'], 'đã duyệt vào skills.lock');
@@ -253,4 +259,26 @@ test('Giám đốc biết phạm vi của mọi team qua get_company_overview, v
   assert.match(prompt, /get_company_overview/);
   assert.match(prompt, /Thiết kế nên làm TRƯỚC/);
   assert.match(prompt, /rà soát của Bảo mật/);
+});
+
+test('hashDir không phụ thuộc kiểu xuống dòng của file văn bản (clone sang máy khác vẫn qua kiểm tra), nhưng vẫn bắt được nội dung bị sửa', () => {
+  const dir = tmpDir();
+  try {
+    const a = path.join(dir, 'a');
+    const b = path.join(dir, 'b');
+    for (const d of [a, b]) fs.mkdirSync(d);
+    fs.writeFileSync(path.join(a, 'SKILL.md'), '---\nname: x\n---\ndòng 1\ndòng 2\n');
+    fs.writeFileSync(path.join(b, 'SKILL.md'), '---\r\nname: x\r\n---\r\ndòng 1\r\ndòng 2\r\n');
+    const bin = Buffer.from([1, 13, 10, 0, 2]);
+    fs.writeFileSync(path.join(a, 'x.bin'), bin);
+    fs.writeFileSync(path.join(b, 'x.bin'), bin);
+    assert.equal(hashDir(a), hashDir(b), 'CRLF và LF cho cùng một hash');
+    fs.writeFileSync(path.join(b, 'SKILL.md'), '---\r\nname: x\r\n---\r\ndòng 1\r\ndòng 3\r\n');
+    assert.notEqual(hashDir(a), hashDir(b), 'đổi nội dung thì hash đổi');
+    fs.writeFileSync(path.join(b, 'SKILL.md'), '---\nname: x\n---\ndòng 1\ndòng 2\n');
+    fs.writeFileSync(path.join(b, 'x.bin'), Buffer.from([1, 10, 0, 2]));
+    assert.notEqual(hashDir(a), hashDir(b), 'file nhị phân được băm nguyên byte');
+  } finally {
+    removeDir(dir);
+  }
 });

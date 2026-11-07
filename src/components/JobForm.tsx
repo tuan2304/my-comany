@@ -17,6 +17,9 @@ export default function JobForm({ teams, disabled, onCreated }: Props) {
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
   const [acceptance, setAcceptance] = useState('');
+  const [contest, setContest] = useState(false);
+  const [setA, setSetA] = useState('impeccable, ui-ux-pro-max');
+  const [setB, setSetB] = useState('design-taste-frontend, ui-ux-pro-max');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +32,11 @@ export default function JobForm({ teams, disabled, onCreated }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const { job } = await api<{ job: Job }>('/api/jobs', { method: 'POST', body: { team: chosen, title, prompt, acceptance } });
+      const names = (text: string) => text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+      const { job } = await api<{ job: Job }>('/api/jobs', {
+        method: 'POST',
+        body: { team: chosen, title, prompt, acceptance, ...(contest ? { contest: { a: names(setA), b: names(setB) } } : {}) },
+      });
       setTitle('');
       setPrompt('');
       setAcceptance('');
@@ -82,6 +89,26 @@ export default function JobForm({ teams, disabled, onCreated }: Props) {
         Tiêu chí hoàn thành của cả việc <span className="muted">(không bắt buộc)</span>
         <textarea value={acceptance} onChange={(e) => setAcceptance(e.target.value)} rows={3} />
       </label>
+      <label className="check">
+        <input type="checkbox" checked={contest} onChange={(e) => setContest(e.target.checked)} disabled={workers.length < 2} />
+        {' '}Thi đấu skill: hai người cùng làm một việc, mỗi người một bộ skill, bạn xem rồi chọn bản tốt hơn
+      </label>
+      {contest && (
+        <>
+          <p className="muted">
+            Trưởng nhóm chọn hai người và giao cùng một đề bài; hệ thống gán ngẫu nhiên bộ skill và ẩn danh khi bạn xem. Tốn khoảng 2 lượt làm việc (một lượt mỗi người) trong hạn mức Pro.
+            Ảnh chụp cần mục <code>preview</code> trong <code>local/project.md</code>; không có thì vẫn thi được nhưng không có ảnh.
+          </p>
+          <label>
+            Bộ skill A <span className="muted">(cách nhau bằng dấu phẩy)</span>
+            <input value={setA} onChange={(e) => setSetA(e.target.value)} required />
+          </label>
+          <label>
+            Bộ skill B
+            <input value={setB} onChange={(e) => setSetB(e.target.value)} required />
+          </label>
+        </>
+      )}
       {error && <p className="error" role="alert">{error}</p>}
       <button type="submit" disabled={busy || disabled || withLead.length === 0}>{busy ? 'Đang giao...' : 'Giao cho Trưởng nhóm'}</button>
     </form>

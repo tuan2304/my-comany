@@ -311,7 +311,7 @@ test('cầu nối MCP: bắt tay, liệt kê và gọi công cụ đúng theo lo
       assert.deepEqual((await client.request('ping')).result, {});
 
       const list = await client.request('tools/list');
-      assert.deepEqual(list.result.tools.map((t) => t.name).sort(), ['assign_to_member', 'get_team_workload'], 'lượt lập kế hoạch không có công cụ duyệt bài');
+      assert.deepEqual(list.result.tools.map((t) => t.name).sort(), ['assign_contest', 'assign_to_member', 'get_team_workload'], 'lượt lập kế hoạch không có công cụ duyệt bài');
       assert.deepEqual(list.result.tools.find((t) => t.name === 'assign_to_member').inputSchema.required, ['member', 'title', 'description', 'files']);
 
       const workload = await client.request('tools/call', { name: 'get_team_workload', arguments: {} });

@@ -6,6 +6,9 @@ import { Auth, sessionCookie, sessionTokenFrom } from './auth.mjs';
 import { openDb } from './db.mjs';
 import { runDoctor } from './doctor.mjs';
 import { ensureDirs } from './config.mjs';
+import { inspect as inspectIntegration, integrate as integrateIntoProject } from './integrate.mjs';
+import { inspectEpicFailure, recoverEpic } from './epic-recovery.mjs';
+import { inspectFailure, recoverTask } from './recovery.mjs';
 import { loginPage } from './login-page.mjs';
 import { loadProject } from './project.mjs';
 import { PushService } from './push.mjs';
@@ -279,7 +282,7 @@ export async function startServer({ cfg, dev = false, withUi = true, uiHandler =
       return sendJson(res, 201, { task });
     }
 
-    const taskMatch = pathname.match(/^\/api\/tasks\/(\d+)(?:\/(stop))?$/);
+    const taskMatch = pathname.match(/^\/api\/tasks\/(\d+)(?:\/(stop|recovery|recover))?$/);
     if (taskMatch) {
       const id = Number(taskMatch[1]);
       if (method === 'GET' && !taskMatch[2]) {
@@ -287,9 +290,53 @@ export async function startServer({ cfg, dev = false, withUi = true, uiHandler =
         if (!task) return sendJson(res, 404, { error: 'Không có việc này.' });
         return sendJson(res, 200, { task, events: store.listEvents(id) });
       }
+      if (method === 'GET' && taskMatch[2] === 'recovery') {
+        return sendJson(res, 200, await inspectFailure({ store, projectRoot: cfg.projectRoot, id }));
+      }
+      if (method === 'POST' && taskMatch[2] === 'recover') {
+        const body = await readJson(req);
+        const task = await recoverTask(runner, id, { action: body.action, guidance: body.guidance });
+        return sendJson(res, 200, { task });
+      }
       if (method === 'POST' && taskMatch[2] === 'stop') {
         if (!store.getTask(id)) return sendJson(res, 404, { error: 'Không có việc này.' });
         return sendJson(res, 200, { ok: runner.stop(id) });
+      }
+    }
+
+    // ---- Câu hỏi nhân viên gửi cho chủ công ty (ask_owner): xem và trả lời ----
+    const questionMatch = pathname.match(/^\/api\/questions\/(\d+)(?:\/(answer))?$/);
+    if (questionMatch) {
+      const id = Number(questionMatch[1]);
+      const q = store.getQuestion(id);
+      if (!q || q.kind !== 'owner') return sendJson(res, 404, { error: 'Không có câu hỏi này.' });
+      if (method === 'GET' && !questionMatch[2]) {
+        const task = store.getTask(q.task_id);
+        return sendJson(res, 200, {
+          question: { id: q.id, task_id: q.task_id, asker: q.asker, text: q.text, status: q.status, answer: q.answer, options: q.options ? JSON.parse(q.options) : [] },
+          task: task ? { id: task.id, title: task.title, member: task.member, status: task.status } : null,
+        });
+      }
+      if (method === 'POST' && questionMatch[2] === 'answer') {
+        const body = await readJson(req);
+        const updated = runner.questions.answerOwner(id, { answer: body.answer, decline: body.decline === true });
+        return sendJson(res, 200, { question: { id: updated.id, status: updated.status } });
+      }
+    }
+
+    // ---- Đưa kết quả (nhánh company/...) vào dự án: xem trước rồi gộp, chỉ khi người dùng bấm ----
+    const integrateMatch = pathname.match(/^\/api\/integrate\/(task|job|epic)\/(\d+)$/);
+    if (integrateMatch) {
+      const kind = integrateMatch[1];
+      const id = Number(integrateMatch[2]);
+      if (method === 'GET') {
+        return sendJson(res, 200, await inspectIntegration({ store, projectRoot: cfg.projectRoot, kind, id }));
+      }
+      if (method === 'POST') {
+        const result = await integrateIntoProject({ store, projectRoot: cfg.projectRoot, kind, id });
+        if (!result.ok) return sendJson(res, 409, { error: result.error, state: result.state });
+        push('integrated', { kind, id });
+        return sendJson(res, 200, result);
       }
     }
 
@@ -303,13 +350,21 @@ export async function startServer({ cfg, dev = false, withUi = true, uiHandler =
       return sendJson(res, 201, { epic });
     }
 
-    const epicMatch = pathname.match(/^\/api\/epics\/(\d+)(?:\/(approve-plan|reject-plan|approve-result|reject-result|stop))?$/);
+    const epicMatch = pathname.match(/^\/api\/epics\/(\d+)(?:\/(approve-plan|reject-plan|approve-result|reject-result|stop|recovery|recover))?$/);
     if (epicMatch) {
       const id = Number(epicMatch[1]);
       const action = epicMatch[2];
       if (!store.getEpic(id)) return sendJson(res, 404, { error: 'Không có yêu cầu này.' });
       if (method === 'GET' && !action) {
         return sendJson(res, 200, { epic: store.getEpic(id), jobs: store.epicJobs(id), tasks: store.epicTasks(id) });
+      }
+      if (method === 'GET' && action === 'recovery') {
+        return sendJson(res, 200, await inspectEpicFailure({ store, projectRoot: cfg.projectRoot, id }));
+      }
+      if (method === 'POST' && action === 'recover') {
+        const body = await readJson(req);
+        const epic = await recoverEpic(runner, id, { action: body.action, guidance: body.guidance });
+        return sendJson(res, 200, { epic });
       }
       if (method === 'POST' && action) {
         const body = await readJson(req);
@@ -340,16 +395,29 @@ export async function startServer({ cfg, dev = false, withUi = true, uiHandler =
     if (method === 'POST' && pathname === '/api/jobs') {
       reload();
       const body = await readJson(req);
-      const job = await runner.jobs.create({ team: body.team, title: body.title, prompt: body.prompt, acceptance: body.acceptance });
+      const job = await runner.jobs.create({ team: body.team, title: body.title, prompt: body.prompt, acceptance: body.acceptance, contest: body.contest });
       return sendJson(res, 201, { job });
     }
 
-    const jobMatch = pathname.match(/^\/api\/jobs\/(\d+)(?:\/(stop))?$/);
+    const jobMatch = pathname.match(/^\/api\/jobs\/(\d+)(?:\/(stop|replan|contest|contest\/choose))?$/);
     if (jobMatch) {
       const id = Number(jobMatch[1]);
       const job = store.getJob(id);
       if (!job) return sendJson(res, 404, { error: 'Không có việc lớn này.' });
       if (method === 'GET' && !jobMatch[2]) return sendJson(res, 200, { job, tasks: store.jobTasks(id) });
+      if (method === 'GET' && jobMatch[2] === 'contest') {
+        const contest = runner.jobs.contests.view(id);
+        return contest ? sendJson(res, 200, { contest }) : sendJson(res, 404, { error: 'Việc lớn này không phải thi đấu skill.' });
+      }
+      if (method === 'POST' && jobMatch[2] === 'contest/choose') {
+        const body = await readJson(req);
+        await runner.jobs.contests.choose(id, body.option);
+        return sendJson(res, 200, { contest: runner.jobs.contests.view(id) });
+      }
+      if (method === 'POST' && jobMatch[2] === 'replan') {
+        const body = await readJson(req);
+        return sendJson(res, 200, { job: runner.jobs.replan(id, { guidance: body.guidance }) });
+      }
       if (method === 'POST' && jobMatch[2] === 'stop') {
         await runner.jobs.stop(id, 'Việc lớn bị dừng theo yêu cầu.');
         return sendJson(res, 200, { job: store.getJob(id) });

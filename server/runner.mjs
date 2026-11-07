@@ -47,7 +47,7 @@ export function stackMatches(project, key) {
   return (project?.stack ?? []).some((s) => s.toLowerCase().includes(wanted));
 }
 
-export function buildSystemPrompt({ member, team, role, project, canAsk = false }) {
+export function buildSystemPrompt({ member, team, role, project, canAsk = false, skills = [] }) {
   const parts = [`Bạn là ${member.name}, ${role.title} của ${team.name} trong một công ty phần mềm.`];
   if (role.body) parts.push(role.body);
   const notes = Object.entries(role.stack_notes ?? {})
@@ -72,6 +72,18 @@ export function buildSystemPrompt({ member, team, role, project, canAsk = false 
     parts.push(lines.join('\n'));
   }
 
+  if (skills.length) {
+    parts.push(
+      [
+        '## Skill của bạn',
+        'Công ty đã nạp sẵn các skill sau cho bạn. Chúng là cách làm đã được duyệt, không phải gợi ý tùy chọn:',
+        ...skills.map((s) => `- company-skills:${s}`),
+        'Trước khi bắt tay làm, hãy gọi công cụ Skill (tham số skill = tên đầy đủ ở trên, gồm cả tiền tố "company-skills:") cho từng skill liên quan tới việc này, đọc kỹ rồi làm theo. ' +
+          'Trước khi báo xong, gọi lại skill kiểm chứng/kiểm thử nếu có trong danh sách. Quy tắc riêng của công ty ở trên luôn được ưu tiên hơn chỉ dẫn của skill.',
+      ].join('\n'),
+    );
+  }
+
   parts.push(
     [
       '## Quy tắc bắt buộc',
@@ -81,7 +93,7 @@ export function buildSystemPrompt({ member, team, role, project, canAsk = false 
       '- Không tự commit: hệ thống sẽ commit thay đổi của bạn khi bạn xong.',
       canAsk
         ? '- Không có người trực tiếp ngồi cạnh bạn. Thiếu thông tin nhỏ thì chọn phương án hợp lý nhất, tiếp tục làm và ghi giả định vào "Điều còn dang dở". ' +
-          'Chỉ khi VƯỚNG THẬT (đề bài mâu thuẫn, quyết định ảnh hưởng người khác, không đoán được từ code) mới dùng công cụ hỏi: ask_lead (Trưởng nhóm), ask_colleague (đồng nghiệp cùng team) hoặc call_meeting (họp ngắn). ' +
+          'Chỉ khi VƯỚNG THẬT (đề bài mâu thuẫn, quyết định ảnh hưởng người khác, không đoán được từ code) mới dùng công cụ hỏi: ask_lead (Trưởng nhóm), ask_colleague (đồng nghiệp cùng team), call_meeting (họp ngắn) hoặc ask_owner (chính chủ công ty, người thật, chỉ cho quyết định lớn mà team không quyết thay được; kèm 2 đến 4 phương án). ' +
           'Tối đa 2 lần hỏi mỗi việc, câu hỏi tự chứa đủ bối cảnh. Hỏi xong thì KẾT THÚC lượt ngay bằng một câu ngắn: hệ thống gọi lại bạn cùng câu trả lời. Đừng hỏi để xin duyệt hay thăm dò.'
         : '- Không có người trực tiếp để hỏi lúc bạn làm việc. Nếu thiếu thông tin, chọn phương án hợp lý nhất, tiếp tục làm và ghi rõ giả định của bạn trong phần "Điều còn dang dở".',
       '- Khi xong, trả lời bằng tiếng Việt, đúng bốn mục: Đã làm / File thay đổi / Cách kiểm tra / Điều còn dang dở.',
@@ -221,6 +233,14 @@ export function guardEnv({ root, allow, mode }) {
   };
 }
 
+/**
+ * Hệ số kéo dài số lượt và thời gian cho một lượt đã được nâng bậc hoặc được chủ cho chạy lại (phiên cũ đã dùng hết phần ban đầu):
+ * mỗi lần thêm một nửa, tối đa gấp ba.
+ */
+export function stretchOf(task) {
+  return Math.min(1 + 0.5 * ((task.escalations > 0 ? 1 : 0) + task.recoveries), 3);
+}
+
 function killTree(child) {
   if (!child?.pid) return;
   if (process.platform === 'win32') {
@@ -346,8 +366,21 @@ export class Runner extends EventEmitter {
     }
   }
 
+  /** Bộ skill riêng của một bài dự thi (và các skill phải bỏ khỏi mặc định để hai bên chỉ khác nhau ở bộ skill). Việc thường thì rỗng. */
+  contestSkills(task) {
+    if (!task.skill_set) return {};
+    let skillSet;
+    try {
+      skillSet = JSON.parse(task.skill_set);
+    } catch {
+      return {};
+    }
+    const sets = task.job_id ? JSON.parse(this.store.getJob(task.job_id)?.contest ?? 'null')?.sets : null;
+    return { skillSet, excludeSkills: Object.values(sets ?? {}).flat() };
+  }
+
   /** Tạo một việc "làm" cho nhân viên: dùng cho việc lẻ do bạn giao và việc con do Trưởng nhóm giao. */
-  createWork({ found, title, prompt, acceptance = '', level = 'auto', jobId = null, files = null }) {
+  createWork({ found, title, prompt, acceptance = '', level = 'auto', jobId = null, files = null, skillSet = null }) {
     const auto = level === 'auto';
     const task = this.store.createTask({
       title,
@@ -363,6 +396,7 @@ export class Runner extends EventEmitter {
       levelSource: auto ? 'auto' : 'user',
       jobId,
       files,
+      skillSet,
     });
     this.log(
       task.id,
@@ -526,7 +560,7 @@ export class Runner extends EventEmitter {
     this.emitState();
   }
 
-  fail(taskId, message) {
+  fail(taskId, message, code = 'internal') {
     const state = this.running.get(taskId);
     if (state) {
       clearTimeout(state.timer);
@@ -534,7 +568,7 @@ export class Runner extends EventEmitter {
       state.resolveExit?.();
     }
     this.running.delete(taskId);
-    this.update(taskId, { status: 'failed', error: maskSecrets(message), finished_at: Date.now() });
+    this.update(taskId, { status: 'failed', error: maskSecrets(message), failure_code: code, finished_at: Date.now() });
     this.log(taskId, 'error', message);
     this.notifyJobs(taskId);
     this.schedule();
@@ -559,7 +593,7 @@ export class Runner extends EventEmitter {
 
   async launch(task) {
     const found = findMember(this.getTeams(), task.member);
-    if (!found) return this.fail(task.id, `Không còn nhân viên "${task.member}" trong cấu hình team.`);
+    if (!found) return this.fail(task.id, `Không còn nhân viên "${task.member}" trong cấu hình team.`, 'no_member');
     const { team, member, role } = found;
     const project = this.getProject();
     const state = {
@@ -614,13 +648,15 @@ export class Runner extends EventEmitter {
       this.log(task.id, 'triage', `Độ khó: ${chosen.label} → ${task.model} (suy luận ${task.effort}). ${verdict.reason}`);
     }
     if (this.abortIfStopped(task.id, state)) return undefined;
-    // Model và mức suy luận của riêng việc này đè lên mặc định của vai trò. Việc đã được nâng bậc
-    // thì cho thêm số lượt vì phiên cũ đã dùng hết số lượt ban đầu.
+    // Model và mức suy luận của riêng việc này đè lên mặc định của vai trò. Việc đã được nâng bậc hoặc được chủ
+    // cho làm tiếp thì cho thêm số lượt và thời gian (mỗi lần thêm một nửa, tối đa gấp ba) vì phiên cũ đã dùng hết phần ban đầu.
+    const stretch = stretchOf(task);
     const runRole = {
       ...role,
       model: task.model,
       effort: task.effort,
-      max_turns: task.escalations > 0 ? Math.ceil(role.max_turns * 1.5) : role.max_turns,
+      max_turns: Math.ceil(role.max_turns * stretch),
+      timeout_minutes: Math.ceil(role.timeout_minutes * stretch),
     };
 
     if (!task.worktree) {
@@ -659,9 +695,6 @@ export class Runner extends EventEmitter {
       );
     }
 
-    const systemFile = path.join(runDir, 'system.md');
-    fs.writeFileSync(systemFile, buildSystemPrompt({ member, team, role, project, canAsk }), 'utf8');
-
     // Hook chặn cứng file ngoài phạm vi: nhân viên chỉ sửa được trong thư mục của team (nếu hồ sơ có khai).
     const settingsFile = path.join(runDir, 'settings.json');
     fs.writeFileSync(settingsFile, JSON.stringify(buildGuardSettings(path.join(this.cfg.toolDir, 'server', 'path-guard.mjs')), null, 2));
@@ -673,9 +706,14 @@ export class Runner extends EventEmitter {
       role,
       project,
       outDir: path.join(runDir, 'plugin'),
+      ...this.contestSkills(task),
     });
     if (pack.loaded.length) this.log(task.id, 'system', `Skill nạp: ${pack.loaded.join(', ')}`);
     for (const s of pack.skipped) this.log(task.id, 'system', `Bỏ qua skill ${s.name}: ${s.reason}`);
+
+    // Viết system prompt sau khi biết skill nào thật sự được nạp, để dặn agent dùng đúng các skill đó.
+    const systemFile = path.join(runDir, 'system.md');
+    fs.writeFileSync(systemFile, buildSystemPrompt({ member, team, role, project, canAsk, skills: pack.loaded }), 'utf8');
 
     const args = buildClaudeArgs({
       task, role: runRole, project, systemFile, pluginDir: pack.dir, resume, settingsFile, mcpConfigFile, mcpTools: askTools,
@@ -692,6 +730,12 @@ export class Runner extends EventEmitter {
       prompt = buildTaskPrompt(task);
     }
     if (feedback) this.update(task.id, { review_feedback: null });
+    // Lời dặn của chủ khi cho làm tiếp hoặc làm lại một việc đã lỗi.
+    const guidance = task.owner_guidance?.trim();
+    if (guidance) {
+      prompt = `${prompt}\n\n## Lời dặn của chủ công ty (lần làm trước của việc này bị dừng vì lỗi, hãy làm theo lời dặn)\n${guidance}`;
+      this.update(task.id, { owner_guidance: null });
+    }
 
     if (this.abortIfStopped(task.id, state)) return undefined;
     // Câu trả lời cho câu hỏi đã gửi (nếu có) đi kèm lời nhắc. Chỉ đánh dấu "đã giao" sau khi chắc chắn sắp chạy.
@@ -706,7 +750,7 @@ export class Runner extends EventEmitter {
       args,
       prompt,
       env: { ...sanitizedEnv(), ...guardEnv({ root: task.worktree, allow, mode: 'worker' }) },
-      timeoutMinutes: role.timeout_minutes,
+      timeoutMinutes: runRole.timeout_minutes,
     });
     return undefined;
   }
@@ -788,12 +832,20 @@ export class Runner extends EventEmitter {
     const settingsFile = path.join(runDir, 'settings.json');
     fs.writeFileSync(settingsFile, JSON.stringify(buildGuardSettings(path.join(this.cfg.toolDir, 'server', 'path-guard.mjs')), null, 2));
 
+    // Lượt đã được chủ cho chạy lại thì có thêm lượt và thời gian (giống việc của nhân viên).
+    const stretch = stretchOf(task);
     const args = buildLeadArgs({
-      model: task.model, effort: task.effort, maxTurns: review ? role.review_max_turns : role.max_turns,
+      model: task.model, effort: task.effort, maxTurns: Math.ceil((review ? role.review_max_turns : role.max_turns) * stretch),
       systemFile, mcpConfigFile, settingsFile, mcpTools, session: resume ? task.session_id : null,
       // Duyệt bài được chạy lệnh test của dự án để kiểm chứng báo cáo của nhân viên; lập kế hoạch thì không cần.
       extraBash: review && project?.commands?.test ? [project.commands.test] : [],
     });
+    // Lời dặn của chủ khi cho chạy lại lượt này sau lỗi.
+    const guidance = task.owner_guidance?.trim();
+    if (guidance) {
+      prompt = `${prompt}\n\n## Lời dặn của chủ công ty (lần chạy trước của lượt này bị dừng vì lỗi, hãy làm theo lời dặn)\n${guidance}`;
+      this.update(task.id, { owner_guidance: null });
+    }
     if (this.abortIfStopped(task.id, state)) return undefined;
     this.log(task.id, 'system', resume ? 'Làm tiếp phiên trước (--resume).' : review ? 'Bắt đầu duyệt bài.' : 'Bắt đầu lập kế hoạch.');
     this.track(task, state, {
@@ -801,7 +853,7 @@ export class Runner extends EventEmitter {
       args,
       prompt,
       env: { ...sanitizedEnv(), ...guardEnv({ root: cwd, allow: [], mode: 'readonly' }) },
-      timeoutMinutes: role.timeout_minutes,
+      timeoutMinutes: Math.ceil(role.timeout_minutes * stretch),
     });
     return undefined;
   }
@@ -868,7 +920,7 @@ export class Runner extends EventEmitter {
       if (state.closed) return;
       state.closed = true;
       const hint = err.code === 'ENOENT' ? ` Không tìm thấy lệnh "${this.cfg.claudeBin}". Hãy kiểm tra Claude Code đã cài chưa.` : '';
-      this.fail(task.id, `Không chạy được claude: ${err.message}.${hint}`);
+      this.fail(task.id, `Không chạy được claude: ${err.message}.${hint}`, err.code === 'ENOENT' ? 'no_claude' : 'internal');
       state.resolveExit();
     });
     child.on('close', (code, signal) => {
@@ -1032,9 +1084,27 @@ export class Runner extends EventEmitter {
       );
     } else {
       let reason;
-      if (state.timedOut) reason = `Quá thời gian cho phép (${this.timeoutLabel(task)}).`;
-      else if (res) reason = `Kết thúc không thành công (${res.subtype ?? 'lỗi'}${res.terminal_reason ? `, ${res.terminal_reason}` : ''}): ${shorten(String(res.result ?? ''), 300)}`;
-      else reason = `Tiến trình claude thoát bất thường (mã ${code ?? '?'}${signal ? `, tín hiệu ${signal}` : ''}). ${shorten(state.stderrTail, 300)}`;
+      let failureCode;
+      if (state.timedOut) {
+        reason = `Quá thời gian cho phép (${this.timeoutLabel(task)}).`;
+        failureCode = 'timeout';
+      } else if (res) {
+        reason = `Kết thúc không thành công (${res.subtype ?? 'lỗi'}${res.terminal_reason ? `, ${res.terminal_reason}` : ''}): ${shorten(String(res.result ?? ''), 300)}`;
+        failureCode = res.subtype === 'error_max_turns' ? 'max_turns' : 'error_result';
+      } else {
+        reason = `Tiến trình claude thoát bất thường (mã ${code ?? '?'}${signal ? `, tín hiệu ${signal}` : ''}). ${shorten(state.stderrTail, 300)}`;
+        failureCode = 'crash';
+      }
+      // Tiến trình tự thoát (mạng chập chờn, máy ngủ đông...) thường qua khỏi nếu thử lại: tự làm tiếp đúng phiên cũ MỘT lần,
+      // sau một lúc. Lần nữa vẫn lỗi thì mới đến tay chủ. (Lỗi khác như hết lượt, quá giờ, Claude báo lỗi thì không tự thử: dễ tốn hạn mức vô ích.)
+      if (this.canAutoRetry(task, failureCode, leadRun)) {
+        const delay = this.cfg.autoRetryDelayMs ?? 30_000;
+        this.update(taskId, { ...totals, status: 'queued', auto_retries: task.auto_retries + 1, resume_at: now + delay, turns: res?.num_turns ?? task.turns });
+        this.log(taskId, 'warn', `${reason} Tự thử lại một lần (làm tiếp phiên cũ) sau ${Math.round(delay / 1000)} giây.`);
+        if (!this.stopped) await this.notifyJobs(taskId);
+        this.schedule();
+        return;
+      }
       let changedFiles = [];
       if (!leadRun) {
         try {
@@ -1051,6 +1121,7 @@ export class Runner extends EventEmitter {
         ...totals,
         status: 'failed',
         error: maskSecrets(reason),
+        failure_code: failureCode,
         changed_files: leadRun ? null : JSON.stringify(changedFiles),
         turns: res?.num_turns ?? task.turns,
         finished_at: now,
@@ -1059,6 +1130,10 @@ export class Runner extends EventEmitter {
     }
     if (!this.stopped) await this.notifyJobs(taskId);
     this.schedule();
+  }
+
+  canAutoRetry(task, failureCode, leadRun) {
+    return !leadRun && failureCode === 'crash' && task.auto_retries < 1 && Boolean(task.session_id) && Boolean(task.worktree) && fs.existsSync(task.worktree);
   }
 
   /**
@@ -1073,7 +1148,8 @@ export class Runner extends EventEmitter {
 
   timeoutLabel(task) {
     const found = findMember(this.getTeams(), task.member);
-    return `${found?.role.timeout_minutes ?? '?'} phút`;
+    if (!found) return '? phút';
+    return `${Math.ceil(found.role.timeout_minutes * stretchOf(task))} phút`;
   }
 
   stop(taskId) {

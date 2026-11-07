@@ -53,6 +53,7 @@ export function testConfig(root, project, local, overrides = {}) {
       claudeBin: process.execPath,
       claudeArgsPrefix: [FAKE_CLAUDE],
       quotaMarginMs: 0,
+      autoRetryDelayMs: 0,
       ...overrides,
     },
   });

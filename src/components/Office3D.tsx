@@ -8,6 +8,9 @@ import { countByTeam, layoutBuilding } from '@/office/layout';
 import { createOfficeScene, type ViewMode } from '@/office/create';
 import type { OfficeScene } from '@/office/scene-types';
 import { OfficeSim } from '@/office/sim';
+import { useTheme } from '@/lib/theme';
+import ContestPanel from './ContestPanel';
+import { Icon } from './ui';
 import { IDLE_VIEW, lampOf, ownerRequests, viewOf, type Lamp } from '@/office/status';
 
 interface Props {
@@ -74,6 +77,8 @@ export default function Office3D({ teams, tasks, jobs, epics, lastTool, pausedUn
   const [webgl] = useState(webglAvailable);
   const [preferred, setPreferred] = useState<ViewMode>(readMode);
   const [floor, setFloor] = useState(0);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const dark = useTheme() === 'dark';
   const [reducedMotion] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   // Không có WebGL thì tự dùng bản 2D pixel art (vẫn đầy đủ tính năng) thay vì hiện danh sách.
   const mode: ViewMode = webgl ? preferred : '2d';
@@ -91,13 +96,12 @@ export default function Office3D({ teams, tasks, jobs, epics, lastTool, pausedUn
     () => viewOf({ tasks, jobs, epics, lastTool, now: minute * 60_000 + 59_999 }),
     [tasks, jobs, epics, lastTool, minute],
   );
-  const requests = useMemo(() => ownerRequests(epics, jobs), [epics, jobs]);
+  const requests = useMemo(() => ownerRequests(epics, jobs, tasks), [epics, jobs, tasks]);
   const counts = useMemo(() => countByTeam(building), [building]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return undefined;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const office = createOfficeScene(mode, host, layout, { dark, reducedMotion, onSelect: setSelected }, sim);
     sceneRef.current = office;
     // Cho phép kiểm thử bằng trình duyệt tự động tìm vị trí nhân vật trên màn hình (không phải biến toàn cục).
@@ -106,7 +110,7 @@ export default function Office3D({ teams, tasks, jobs, epics, lastTool, pausedUn
       office.dispose();
       sceneRef.current = null;
     };
-  }, [layout, mode, sim, reducedMotion]);
+  }, [layout, mode, sim, reducedMotion, dark]);
 
   // Các tầng đang không xem vẫn chạy ngầm (mọi người vẫn làm việc), để khi sang tầng đó thấy đúng cảnh hiện tại.
   useEffect(() => {
@@ -148,6 +152,13 @@ export default function Office3D({ teams, tasks, jobs, epics, lastTool, pausedUn
     return () => timers.forEach(clearTimeout);
   }, [tasks, jobs, epics, layout, mode]);
 
+  // Thi đấu skill: Trưởng nhóm có hai bản đang chờ bạn chọn. Bấm vào người đó thì mở thẳng cửa sổ so sánh.
+  const awaitingContest = selected ? jobs.find((j) => j.lead === selected && j.status === 'awaiting_choice') ?? null : null;
+  const [contestPinned, setContestPinned] = useState<number | null>(null); // cửa sổ đang mở do bạn thao tác (giữ mở cả sau khi chọn xong)
+  const [contestClosed, setContestClosed] = useState<string | null>(null);
+  const contestKey = awaitingContest ? `${selected}:${awaitingContest.id}` : null;
+  const contestJob = contestPinned ?? (awaitingContest && contestClosed !== contestKey ? awaitingContest.id : null);
+
   const person = building.people.find((p) => p.name === selected) ?? null;
   const personView = person ? views[person.name] ?? IDLE_VIEW : IDLE_VIEW;
   const personLamp = lampOf(personView);
@@ -160,19 +171,39 @@ export default function Office3D({ teams, tasks, jobs, epics, lastTool, pausedUn
   const directors = building.people.filter((p) => p.isDirector).length;
 
   return (
-    <div className="card office-card">
-      <div className="detail-head">
-        <h2>Văn phòng</h2>
-        <div className="mode-switch" role="group" aria-label="Kiểu hiển thị">
+    <div className="office-stage">
+      <div
+        ref={hostRef}
+        className="office-canvas"
+        data-testid="office-canvas"
+        data-people={building.people.length}
+        data-floor={floorIndex + 1}
+        data-webgl={webgl ? 'ok' : 'none'}
+        data-mode={mode}
+        role="img"
+        aria-label={`Văn phòng ${mode === '3d' ? 'ba chiều' : 'pixel art nhìn từ trên xuống'}, tầng ${floorIndex + 1}, có ${building.people.length} người. Kéo để dịch chuyển, cuộn để phóng to, bấm vào một người để xem việc họ đang làm.`}
+      />
+      <div className="scrim scrim-top" aria-hidden="true" />
+      <div className="scrim scrim-bottom" aria-hidden="true" />
+
+      <div className="stage-notices" aria-live="polite">
+        {pausedUntil > now && (
+          <p className="pill pill-warn" data-testid="office-break">Hết hạn mức Pro: cả công ty đang nghỉ giải lao, tự làm tiếp khi hạn mức hồi.</p>
+        )}
+        {!webgl && <p className="pill pill-warn">Trình duyệt không bật được WebGL nên dùng bản 2D pixel art.</p>}
+      </div>
+
+      <div className="stage-tools">
+        <div className="segmented" role="group" aria-label="Kiểu hiển thị">
           {(['3d', '2d'] as const).map((m) => (
             <button
               key={m}
               type="button"
               data-testid={`office-mode-${m}`}
-              className={mode === m ? 'tab active' : 'tab'}
+              className={mode === m ? 'seg active' : 'seg'}
               aria-pressed={mode === m}
               disabled={m === '3d' && !webgl}
-              title={m === '3d' ? 'Cảnh 3D isometric' : 'Cảnh 2D pixel art'}
+              title={m === '3d' ? 'Cảnh 3D isometric' : 'Cảnh 2D pixel art nhìn từ trên xuống'}
               onClick={() => {
                 setPreferred(m);
                 try {
@@ -187,7 +218,7 @@ export default function Office3D({ teams, tasks, jobs, epics, lastTool, pausedUn
           ))}
         </div>
         {building.floors.length > 1 && (
-          <div className="mode-switch" role="group" aria-label="Tầng">
+          <div className="segmented" role="group" aria-label="Tầng">
             {building.floors.map((f, i) => {
               const needsYou = f.people.some((p) => views[p.name]?.needsYou);
               return (
@@ -195,96 +226,103 @@ export default function Office3D({ teams, tasks, jobs, epics, lastTool, pausedUn
                   key={f.floor}
                   type="button"
                   data-testid={`office-floor-${i + 1}`}
-                  className={i === floorIndex ? 'tab active' : 'tab'}
+                  className={i === floorIndex ? 'seg active' : 'seg'}
                   aria-pressed={i === floorIndex}
                   title={`Tầng ${i + 1}: ${f.people.length} người`}
                   onClick={() => setFloor(i)}
                 >
-                  Tầng {i + 1}{needsYou ? ' ●' : ''}
+                  Tầng {i + 1}{needsYou && <span className="seg-dot" role="img" aria-label="có việc chờ bạn" />}
                 </button>
               );
             })}
           </div>
         )}
-        {!webgl && <p className="notice">Trình duyệt không bật được WebGL nên dùng bản 2D pixel art.</p>}
-        <p className="muted" data-testid="office-summary">
-          {building.people.length} người{building.floors.length > 1 ? `, ${building.floors.length} tầng` : ''}: {[...(directors ? [`Ban giám đốc: ${directors}`] : []), ...teamLabels].join(' · ')}
-        </p>
       </div>
-      <div className="office">
-        <div
-          ref={hostRef}
-          className="office-canvas"
-          data-testid="office-canvas"
-          data-people={building.people.length}
-          data-floor={floorIndex + 1}
-          data-webgl={webgl ? 'ok' : 'none'}
-          data-mode={mode}
-          role="img"
-          aria-label={`Văn phòng ${mode === '3d' ? 'ba chiều' : 'pixel art nhìn từ trên xuống'}, tầng ${floorIndex + 1}, có ${building.people.length} người. Kéo để dịch chuyển, cuộn để phóng to, bấm vào một người để xem việc họ đang làm.`}
-        />
-        <aside className="office-panel" aria-live="polite">
-          {pausedUntil > now && (
-            <p className="banner notice" data-testid="office-break">Hết hạn mức Pro: cả công ty đang nghỉ giải lao, tự làm tiếp khi hạn mức hồi.</p>
-          )}
-          {requests.length > 0 && (
-            <p className="banner notice" data-testid="office-waiting">
-              {requests.length} việc đang chờ bạn quyết: {requests.map((r) => `${r.kind === 'epic' ? 'yêu cầu' : 'việc lớn'} #${r.id}`).join(', ')}.
+
+      <div className="stage-info">
+        <p className="stage-summary" data-testid="office-summary">
+          {building.people.length} người{building.floors.length > 1 ? `, ${building.floors.length} tầng` : ''}
+          <span className="stage-summary-teams"> · {[...(directors ? [`Ban giám đốc ${directors}`] : []), ...teamLabels].join(' · ')}</span>
+        </p>
+        <button type="button" className="glass-btn" aria-expanded={legendOpen} onClick={() => setLegendOpen((v) => !v)}>
+          <Icon name="help" size={16} /> Chú giải
+        </button>
+      </div>
+
+      {legendOpen && (
+        <aside className="popover legend-pop" aria-label="Chú giải">
+          <div className="popover-head">
+            <h3>Chú giải</h3>
+            <button type="button" className="icon-btn" aria-label="Đóng chú giải" onClick={() => setLegendOpen(false)}><Icon name="x" size={16} /></button>
+          </div>
+          <p className="muted">Kéo chuột để dịch chuyển, cuộn để phóng to, bấm một nhân vật để xem việc họ đang làm. Đổi 3D | 2D thì mọi người vẫn đứng đúng chỗ. Hết chỗ làm việc thì tòa nhà mở thêm tầng.</p>
+          <ul className="legend">
+            {LEGEND.map((item) => (
+              <li key={item.text}><span className="dot" style={{ background: item.color }} /> {item.text}</li>
+            ))}
+          </ul>
+          <p className="muted">Vương miện vàng là Trưởng nhóm. Đọc code thì ra thư viện, chạy lệnh thì vào phòng server, Giám đốc lập kế hoạch thì ra bảng trắng. Giấy bay giữa các bàn là việc được giao, nộp, trả lại hoặc cất vào phòng Hồ sơ. Lúc rảnh nhân viên đi pha cà phê, họp đứng, ngắm cửa sổ, đọc sách; có việc là quay về bàn ngay.</p>
+        </aside>
+      )}
+
+      {person && (
+        <aside className="popover person-pop" aria-live="polite" aria-label={`Việc của ${person.name}`}>
+          <div className="popover-head">
+            <div>
+              <h3>{person.name}{person.isLead && <span className="crown"> · Trưởng nhóm</span>}</h3>
+              <p className="muted">{person.title} · {person.teamName} · {person.model}</p>
+            </div>
+            <button type="button" className="icon-btn" aria-label="Bỏ chọn" onClick={() => setSelected(null)}><Icon name="x" size={16} /></button>
+          </div>
+          <p>
+            <span className={`chip ${personLamp === 'working' ? 'status-running' : personLamp === 'failed' ? 'status-failed' : personLamp === 'needs_you' ? 'status-submitted' : ''}`}>{LAMP_TEXT[personLamp]}</span>
+            {personView.detail && <span className="muted"> {personView.detail}</span>}
+          </p>
+          {personView.overload && <p className="muted">Đã chạm trần tải ({personView.queued} việc chờ). Việc mới nên giao cho người khác.</p>}
+          {awaitingContest && (
+            <p>
+              <button type="button" onClick={() => { setContestClosed(null); setContestPinned(awaitingContest.id); }}>Xem hai bản và chọn</button>
             </p>
           )}
-          {!person && (
+          {open.length === 0 && <p className="muted">Hiện không có việc nào đang mở.</p>}
+          <ul className="list-plain">
+            {open.map((t) => (
+              <li key={t.id}>
+                <button type="button" className="row" onClick={() => onOpenTask(t.id)}>
+                  <span className="row-title">#{t.id} {t.title}</span>
+                  <span className="row-sub">{TASK_KIND_LABEL[t.kind]}{t.model ? ` · ${t.model}` : ''}</span>
+                  <span className={`chip status-${t.status}`}>{STATUS_LABEL[t.status]}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {recent.length > 0 && (
             <>
-              <h3>Chú giải</h3>
-              <p className="muted">Kéo chuột để dịch chuyển, cuộn để phóng to. Bấm vào một nhân vật để xem việc họ đang làm. Nút 3D | 2D đổi giữa cảnh 3D isometric và mặt bằng 2D pixel art nhìn từ trên xuống; đổi qua lại thì mọi người vẫn đứng đúng chỗ đang đứng. Tòa nhà có hình dạng cố định: thêm team thì lấp chỗ trống trong khu làm việc, hết chỗ thì mở thêm tầng (nút Tầng ở trên).</p>
-              <ul className="legend">
-                {LEGEND.map((item) => (
-                  <li key={item.text}><span className="dot" style={{ background: item.color }} /> {item.text}</li>
-                ))}
-              </ul>
-              <p className="muted">Vương miện vàng là Trưởng nhóm. Ai đọc code thì ra thư viện, ai chạy lệnh thì vào phòng server, Giám đốc lập kế hoạch thì ra bảng trắng. Giấy bay giữa các bàn là việc được giao, nộp, trả lại hoặc cất vào phòng Hồ sơ. Lúc rảnh nhân viên không ngồi yên: vươn vai, nhấp cà phê, đi pha cà phê ở pantry, họp đứng ở phòng họp, ngắm cửa sổ, vào WC, đọc sách; có việc là quay về bàn ngay. Trong phòng Hồ sơ, họp, pantry và khu nghỉ còn có đồ dùng sống động: đồng hồ chạy theo giờ thật, máy pha cà phê bốc hơi khi có người pha, màn hình phòng họp sáng khi có người họp, bể cá và đèn tủ máy chủ nhấp nháy.</p>
-            </>
-          )}
-          {person && (
-            <>
-              <h3>{person.name}{person.isLead ? ' 👑' : ''}</h3>
-              <p className="muted">{person.title} · {person.teamName} · {person.model}</p>
-              <p><span className={`chip ${personLamp === 'working' ? 'status-running' : personLamp === 'failed' ? 'status-failed' : ''}`}>{LAMP_TEXT[personLamp]}</span>
-                {personView.detail && <span className="muted"> {personView.detail}</span>}
-              </p>
-              {personView.overload && <p className="muted">Đã chạm trần tải ({personView.queued} việc chờ). Việc mới nên giao cho người khác.</p>}
-              {open.length === 0 && <p className="muted">Hiện không có việc nào đang mở.</p>}
+              <h4>Gần đây</h4>
               <ul className="list-plain">
-                {open.map((t) => (
+                {recent.map((t) => (
                   <li key={t.id}>
                     <button type="button" className="row" onClick={() => onOpenTask(t.id)}>
                       <span className="row-title">#{t.id} {t.title}</span>
-                      <span className="row-sub">{TASK_KIND_LABEL[t.kind]}{t.model ? ` · ${t.model}` : ''}</span>
+                      <span className="row-sub">{TASK_KIND_LABEL[t.kind]}</span>
                       <span className={`chip status-${t.status}`}>{STATUS_LABEL[t.status]}</span>
                     </button>
                   </li>
                 ))}
               </ul>
-              {recent.length > 0 && (
-                <>
-                  <h4>Gần đây</h4>
-                  <ul className="list-plain">
-                    {recent.map((t) => (
-                      <li key={t.id}>
-                        <button type="button" className="row" onClick={() => onOpenTask(t.id)}>
-                          <span className="row-title">#{t.id} {t.title}</span>
-                          <span className="row-sub">{TASK_KIND_LABEL[t.kind]}</span>
-                          <span className={`chip status-${t.status}`}>{STATUS_LABEL[t.status]}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              <button type="button" className="secondary" onClick={() => setSelected(null)}>Bỏ chọn</button>
             </>
           )}
         </aside>
-      </div>
+      )}
+
+      {contestJob !== null && (
+        <ContestPanel
+          key={contestJob}
+          jobId={contestJob}
+          onChosen={() => setContestPinned(contestJob)}
+          onClose={() => { setContestPinned(null); setContestClosed(contestKey); }}
+        />
+      )}
     </div>
   );
 }

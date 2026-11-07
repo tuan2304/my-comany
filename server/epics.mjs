@@ -17,6 +17,23 @@ const MAX_JOBS = 6;
 const MAX_REPLANS = 2;
 export const MAX_REWORK_ROUNDS = 1;
 
+/** Yêu cầu còn "mở" hoặc vừa kết thúc ở lỗi/cần xem thì mới cứu được một việc lớn của nó. */
+const EPIC_RESCUE_STATUSES = ['running', 'attention', 'failed'];
+
+/**
+ * Việc lớn nằm trong một yêu cầu có mở lại để cứu được không? Trả về lý do nếu không (chuỗi), hoặc null nếu được.
+ * Dùng chung cho việc mở lại việc lớn, lập kế hoạch lại và xử lý việc con lỗi.
+ */
+export function epicJobRescueBlock(store, job) {
+  const epic = job.epic_id ? store.getEpic(job.epic_id) : null;
+  if (!epic) return 'không còn yêu cầu chứa nó nên không mở lại được.';
+  if (!EPIC_RESCUE_STATUSES.includes(epic.status)) {
+    return `thuộc yêu cầu #${epic.id} (đang "${epic.status}") nên chưa mở lại riêng được; chỉ mở lại khi yêu cầu đang chạy, cần xem hoặc lỗi.`;
+  }
+  if (job.round !== epic.round) return `thuộc đợt làm lại cũ của yêu cầu #${epic.id} nên không mở lại được.`;
+  return null;
+}
+
 export class Epics {
   /** @param {import('./runner.mjs').Runner} runner */
   constructor(runner) {
@@ -310,15 +327,84 @@ export class Epics {
     await this.evaluate(epic.id);
   }
 
+  // ---------- Chủ cứu yêu cầu lỗi ----------
+
+  /**
+   * Mở lại yêu cầu để cứu một việc lớn của nó (xử lý việc con lỗi, hoặc cho Trưởng nhóm lập kế hoạch lại).
+   * Yêu cầu quay về "đang chạy"; các việc đã bị đánh lỗi dây chuyền chỉ vì phụ thuộc vào việc này (chưa từng chạy) được cho chờ lại.
+   * Đồng bộ (không await) để không lọt khe giữa lúc mở lại với lúc một việc khác kết thúc.
+   */
+  reopenForJob(job) {
+    const blocked = epicJobRescueBlock(this.store, job);
+    if (blocked) throw new UserError(`Việc lớn #${job.id} ${blocked}`);
+    const epic = this.store.getEpic(job.epic_id);
+    if (epic.status !== 'running') {
+      this.update(epic.id, { status: 'running', error: null, summary: null, conflict_files: null, finished_at: null });
+      this.log(epic, 'job', `Chủ mở lại yêu cầu #${epic.id} để cứu việc lớn #${job.id}.`);
+    }
+    // Việc phụ thuộc (kể cả gián tiếp) bị đánh lỗi dây chuyền thì chưa từng có kế hoạch riêng (plan_task_id rỗng): cho chờ lại.
+    const reset = new Set([job.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const other of this.store.epicJobs(epic.id)) {
+        if (reset.has(other.id) || other.status !== 'failed' || other.plan_task_id !== null) continue;
+        const deps = JSON.parse(other.depends_on ?? '[]');
+        if (deps.some((d) => reset.has(d))) {
+          reset.add(other.id);
+          grew = true;
+          this.r.emit('job', this.store.updateJob(other.id, { status: 'waiting', error: null, summary: null, finished_at: null }));
+        }
+      }
+    }
+  }
+
+  /** Mở lại yêu cầu để Giám đốc chạy lại một lượt: "dplan" (yêu cầu đang lỗi) hoặc "dreview" (cần xem vì chưa kết luận được). */
+  reopenForDirector(epicId, kind) {
+    const epic = this.store.getEpic(epicId);
+    if (!epic) throw new UserError('Không có yêu cầu này.');
+    if (kind === 'dplan') {
+      if (epic.status !== 'failed') throw new UserError('Chỉ chạy lại lượt lập kế hoạch khi yêu cầu đang ở trạng thái lỗi.');
+      this.update(epicId, { status: 'planning', error: null, finished_at: null });
+      this.log(epic, 'job', 'Chủ cho Giám đốc lập kế hoạch lại.');
+    } else {
+      if (epic.status !== 'attention' || epic.verdict) throw new UserError('Chỉ chạy lại lượt kiểm tra khi Giám đốc chưa kết luận được.');
+      this.update(epicId, { status: 'reviewing', error: null, finished_at: null });
+      this.log(epic, 'job', 'Chủ cho Giám đốc kiểm tra lại.');
+    }
+  }
+
+  /**
+   * Bỏ phần lỗi, cho Giám đốc kiểm tra phần đã có: ghép các việc đã xong (và phần đã duyệt của việc "cần xem") rồi chuyển Giám đốc.
+   * Khác `evaluate` thường ở chỗ không đòi mọi việc đều xong.
+   */
+  async proceed(id) {
+    const epic = this.store.getEpic(id);
+    if (!epic) throw new UserError('Không có yêu cầu này.');
+    if (!['attention', 'failed'].includes(epic.status)) throw new UserError('Chỉ làm được khi yêu cầu đang ở trạng thái cần xem hoặc lỗi.');
+    const jobs = this.store.epicJobs(id);
+    if (jobs.some((j) => JOB_OPEN.includes(j.status))) throw new UserError('Vẫn còn việc đang chạy.');
+    if (this.usableJobs(epic, jobs).length === 0) throw new UserError('Chưa có việc nào có kết quả để cho Giám đốc kiểm tra.');
+    this.update(id, { status: 'running', error: null, summary: null, conflict_files: null, finished_at: null });
+    this.log(epic, 'job', 'Chủ quyết định bỏ phần lỗi, cho Giám đốc kiểm tra phần đã có.');
+    await this.evaluate(id, { partial: true });
+    return this.store.getEpic(id);
+  }
+
+  /** Việc của đợt hiện tại có kết quả để ghép: đã xong, hoặc "cần xem" nhưng đã gộp được phần đã duyệt. */
+  usableJobs(epic, jobs) {
+    return jobs.filter((j) => j.round === epic.round && ['done', 'attention'].includes(j.status) && j.merge_branch);
+  }
+
   /** Mọi việc của team đã kết thúc: không đạt thì báo chủ, đạt thì ghép kết quả và giao Giám đốc kiểm tra. */
-  async evaluate(epicId) {
+  async evaluate(epicId, { partial = false } = {}) {
     const epic = this.store.getEpic(epicId);
     if (!epic || epic.status !== 'running') return;
     const jobs = this.store.epicJobs(epicId);
     if (jobs.some((j) => JOB_OPEN.includes(j.status))) return;
 
     const bad = jobs.filter((j) => j.status !== 'done');
-    if (bad.length) {
+    if (bad.length && !partial) {
       this.finishEpic(epic, {
         status: 'attention', summary: this.buildSummary(epic, jobs),
         error: `${bad.length} việc của team chưa đạt hoặc bị dừng: ${bad.map((j) => `#${j.id} "${shorten(j.title, 40)}" (${j.status})`).join(', ')}.`,
@@ -335,7 +421,7 @@ export class Epics {
       const baseCommit = round === 0 ? epic.base_commit : await resolveRef(this.r.cfg.projectRoot, epic.merge_branch);
       result = await integrateBranches({
         projectRoot: this.r.cfg.projectRoot, worktreesDir: this.r.cfg.worktreesDir, name, baseCommit,
-        branches: jobs.filter((j) => j.round === round).map((j) => j.merge_branch).filter(Boolean),
+        branches: (partial ? this.usableJobs(epic, jobs) : jobs.filter((j) => j.round === round)).map((j) => j.merge_branch).filter(Boolean),
       });
     } catch (err) {
       this.finishEpic(epic, { status: 'attention', summary: this.buildSummary(epic, jobs), error: `Không ghép được kết quả các team: ${err.message}` });
@@ -393,6 +479,9 @@ export class Epics {
     for (const j of jobs) {
       const workers = this.store.jobTasks(j.id).filter((t) => t.kind === 'work' && t.status === 'done');
       lines.push(`### Việc #${j.id} (${j.team}${j.round ? `, đợt ${j.round}` : ''}): ${j.title} — ${j.status}`);
+      if (j.status !== 'done') {
+        lines.push('(Việc này KHÔNG hoàn chỉnh: chủ đã quyết định bỏ phần lỗi để kiểm tra phần còn lại. Chỉ kiểm tra phần đã ghép, và nêu rõ trong báo cáo phần nào còn thiếu.)');
+      }
       for (const w of workers) lines.push(`- Báo cáo của ${w.member} cho "${shorten(w.title, 80)}": ${shorten(w.result ?? '(không có)', 700)}`);
     }
     lines.push('', `Mã nguồn đã ghép nằm ở thư mục hiện tại (nhánh ${epic.merge_branch}). Hãy tự đọc code và chạy lệnh test của dự án để kiểm chứng, rồi kết luận.`);

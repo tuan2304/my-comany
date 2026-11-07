@@ -6,6 +6,25 @@ function asList(value) {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
+/**
+ * Cách chạy bản xem thử để chụp ảnh giao diện (thi đấu skill). Do CHÍNH CHỦ khai trong local/project.md; hệ thống (không phải nhân viên) chạy lệnh này.
+ *   preview: { command: "npm run dev -- --port {port}", url: "http://localhost:{port}", pages: ["/", "/login"], wait_seconds: 90 }
+ * `{port}` được thay bằng một cổng trống. Không khai thì cuộc thi vẫn chạy, chỉ không có ảnh.
+ */
+function parsePreview(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const command = String(raw.command ?? '').trim();
+  if (!command) return null;
+  const pages = asList(raw.pages).filter((p) => p.startsWith('/')).slice(0, 3);
+  const wait = Number(raw.wait_seconds);
+  return {
+    command,
+    url: String(raw.url ?? 'http://localhost:{port}').trim().replace(/\/+$/, ''),
+    pages: pages.length ? pages : ['/'],
+    waitSeconds: Number.isFinite(wait) && wait >= 5 && wait <= 600 ? wait : 90,
+  };
+}
+
 /** Đọc local/project.md (mục 3.6). Trả về null nếu chưa có. */
 export function loadProject(localDir) {
   const file = path.join(localDir, 'project.md');
@@ -20,6 +39,7 @@ export function loadProject(localDir) {
     folders,
     commands: data.commands && typeof data.commands === 'object' ? data.commands : {},
     allowedCommands: asList(data.allowed_commands),
+    preview: parsePreview(data.preview),
     // Thư mục của dự án được nối (junction) vào mỗi worktree để chạy test mà không phải cài lại, ví dụ node_modules.
     worktreeLinks: asList(data.worktree_links ?? ['node_modules']),
     conventions: String(data.conventions ?? '').trim(),
@@ -75,6 +95,8 @@ export function renderProjectDraft({ name, stack, commands }) {
   for (const [key, value] of Object.entries(commands)) lines.push(`  ${key}: ${value}`);
   const allowed = ['git status', 'git diff', ...Object.values(commands).filter((c) => c !== 'npm install')];
   lines.push(`allowed_commands: [${[...new Set(allowed)].join(', ')}]`);
+  lines.push('# Không bắt buộc: cách chạy bản xem thử để chụp ảnh khi thi đấu skill ({port} được thay bằng một cổng trống).');
+  lines.push('# preview:', '#   command: npm run dev -- --port {port}', '#   url: http://localhost:{port}', '#   pages: [/]', '#   wait_seconds: 90');
   lines.push('conventions: |', '  (Ghi quy ước code của dự án ở đây.)', '---', '');
   lines.push('<!-- BẢN NHÁP do `init` tạo. Hãy xem và sửa trước khi chạy việc thật: hồ sơ này quyết định lệnh nào agent được tự chạy. -->', '');
   return lines.join('\n');

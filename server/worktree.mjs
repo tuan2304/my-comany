@@ -16,6 +16,16 @@ export async function git(cwd, args, { allowFail = false, raw = false } = {}) {
   }
 }
 
+/** Như `git` nhưng không ném lỗi: trả về mã thoát và đầu ra, cho những lệnh mà mã thoát khác 0 là kết quả bình thường. */
+export async function gitResult(cwd, args) {
+  try {
+    const { stdout, stderr } = await execFileAsync('git', args, { cwd, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+    return { code: 0, stdout, stderr };
+  } catch (err) {
+    return { code: typeof err.code === 'number' ? err.code : 1, stdout: String(err.stdout ?? ''), stderr: String(err.stderr ?? err.message ?? '') };
+  }
+}
+
 export async function checkRepo(projectRoot) {
   if (!fs.existsSync(projectRoot)) throw new Error(`Không thấy thư mục dự án: ${projectRoot}`);
   const inside = await git(projectRoot, ['rev-parse', '--is-inside-work-tree'], { allowFail: true });
@@ -39,29 +49,96 @@ export function safeName(value) {
   );
 }
 
+export async function branchExists(projectRoot, branch) {
+  return (await git(projectRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { allowFail: true })) !== null;
+}
+
+/**
+ * Gỡ thư mục làm việc của một việc nhưng GIỮ nhánh (mọi commit vẫn còn để xem hoặc nhặt lại). Chỉ gỡ thư mục nằm trong
+ * `worktreesDir`, và không bao giờ đụng thư mục dự án. Các thư mục nối từ dự án (node_modules...) được gỡ liên kết
+ * TRƯỚC, từng cái một, để không bao giờ xóa nhầm nội dung thật của dự án qua liên kết.
+ */
+export async function removeWorktreeKeepBranch({ projectRoot, worktreesDir, dir }) {
+  if (!dir) return false;
+  const root = path.resolve(worktreesDir);
+  const target = path.resolve(dir);
+  if (target === root || !target.startsWith(root + path.sep)) return false;
+  unlinkLinks(target);
+  await git(projectRoot, ['worktree', 'remove', '--force', target], { allowFail: true });
+  await git(projectRoot, ['worktree', 'prune'], { allowFail: true });
+  return !fs.existsSync(target);
+}
+
+/** Gỡ mọi liên kết (symlink/junction) nằm ở gốc worktree và ở một cấp thư mục con, chỉ gỡ liên kết chứ không đụng đích. */
+function unlinkLinks(dir) {
+  const visit = (folder, depth) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(folder, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name === '.git') continue;
+      const full = path.join(folder, entry.name);
+      let link = entry.isSymbolicLink();
+      if (!link) {
+        try {
+          link = fs.lstatSync(full).isSymbolicLink();
+        } catch {
+          continue;
+        }
+      }
+      if (link) {
+        try {
+          fs.unlinkSync(full);
+        } catch {
+          try {
+            fs.rmdirSync(full);
+          } catch {
+            /* để git xử lý */
+          }
+        }
+      } else if (entry.isDirectory() && depth < 1 && entry.name !== 'node_modules') {
+        visit(full, depth + 1);
+      }
+    }
+  };
+  visit(dir, 0);
+}
+
 /** Mỗi việc một worktree và một nhánh riêng, đặt bên ngoài dự án (mục 3.7). */
 export async function createWorktree({ projectRoot, worktreesDir, member, taskId, links = [], baseCommit: explicitBase }) {
   const head = await checkRepo(projectRoot);
   const baseCommit = explicitBase ?? head;
-  const slug = `${safeName(member)}-task${taskId}`;
+  fs.mkdirSync(worktreesDir, { recursive: true });
+  // "Làm lại" cần một nhánh mới trong khi nhánh cũ vẫn còn: thêm đuôi -2, -3... cho tới khi tên còn trống.
+  let slug = `${safeName(member)}-task${taskId}`;
+  for (let n = 2; await branchExists(projectRoot, `company/${slug}`) || fs.existsSync(path.join(worktreesDir, slug)); n += 1) {
+    slug = `${safeName(member)}-task${taskId}-${n}`;
+  }
   const branch = `company/${slug}`;
   const dir = path.join(worktreesDir, slug);
-  fs.mkdirSync(worktreesDir, { recursive: true });
   await git(projectRoot, ['worktree', 'add', '-b', branch, dir, baseCommit]);
   const linked = linkDirs({ projectRoot, worktree: dir, names: links });
   return { dir, branch, baseCommit, linked };
 }
 
-const GIT_IDENTITY = ['-c', 'user.name=Công ty AI', '-c', 'user.email=my-company@localhost', '-c', 'commit.gpgsign=false'];
+export const GIT_IDENTITY = ['-c', 'user.name=Công ty AI', '-c', 'user.email=my-company@localhost', '-c', 'commit.gpgsign=false'];
 
 /**
  * Gộp các nhánh đã được duyệt của một việc lớn vào một nhánh tích hợp `company/job<id>`, trong worktree
  * riêng. Gặp xung đột thì hủy lần gộp đó và báo file xung đột (không tự giải quyết thay con người).
  */
-export async function integrateBranches({ projectRoot, worktreesDir, name, baseCommit, branches }) {
+export async function integrateBranches({ projectRoot, worktreesDir, name: wanted, baseCommit, branches }) {
+  fs.mkdirSync(worktreesDir, { recursive: true });
+  // Việc lớn được mở lại thì gộp lại từ đầu: nhánh gộp cũ vẫn giữ, nhánh mới thêm đuôi -2, -3...
+  let name = wanted;
+  for (let n = 2; await branchExists(projectRoot, `company/${name}`) || fs.existsSync(path.join(worktreesDir, `${name}-merge`)); n += 1) {
+    name = `${wanted}-${n}`;
+  }
   const branch = `company/${name}`;
   const dir = path.join(worktreesDir, `${name}-merge`);
-  fs.mkdirSync(worktreesDir, { recursive: true });
   await git(projectRoot, ['worktree', 'add', '-b', branch, dir, baseCommit]);
   const merged = [];
   for (const source of branches) {

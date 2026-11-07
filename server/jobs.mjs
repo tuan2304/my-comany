@@ -1,7 +1,10 @@
+import path from 'node:path';
+import { Contests, parseContest, validateSets } from './contest.mjs';
 import { UserError } from './errors.mjs';
 import { shorten } from './guard.mjs';
+import { epicJobRescueBlock } from './epics.mjs';
 import { findMember, workersOf } from './teams.mjs';
-import { branchDiff, checkRepo, integrateBranches, resolveRef } from './worktree.mjs';
+import { branchDiff, checkRepo, integrateBranches, removeWorktreeKeepBranch, resolveRef } from './worktree.mjs';
 
 /**
  * Điều phối việc lớn (job) của một team:
@@ -12,7 +15,7 @@ import { branchDiff, checkRepo, integrateBranches, resolveRef } from './worktree
 
 const WORK_OPEN = ['queued', 'running', 'paused_quota', 'submitted', 'waiting_answer'];
 const LEAD_OPEN = ['queued', 'running', 'paused_quota'];
-const JOB_TERMINAL = ['done', 'attention', 'failed', 'stopped'];
+export const JOB_TERMINAL = ['done', 'attention', 'failed', 'stopped'];
 
 export class JobError extends Error {}
 
@@ -60,6 +63,7 @@ export class Jobs {
   constructor(runner) {
     this.r = runner;
     this.starting = new Set(); // việc đang được chuẩn bị bắt đầu (tránh bắt đầu hai lần khi hai việc phụ thuộc cùng xong)
+    this.contests = new Contests(this);
   }
 
   get store() {
@@ -102,7 +106,7 @@ export class Jobs {
 
   // ---------- Tạo việc lớn ----------
 
-  async create({ team: teamId, title, prompt, acceptance = '' }) {
+  async create({ team: teamId, title, prompt, acceptance = '', contest = null }) {
     const cleanTitle = String(title ?? '').trim();
     const cleanPrompt = String(prompt ?? '').trim();
     if (!cleanTitle) throw new UserError('Thiếu tiêu đề việc lớn.');
@@ -114,6 +118,11 @@ export class Jobs {
     if (!team) throw new UserError(`Không có team "${teamId}".`);
     if (!team.lead) throw new UserError(`Team "${team.name}" chưa có Trưởng nhóm nên không nhận việc lớn.`);
     if (workersOf(team).length === 0) throw new UserError(`Team "${team.name}" chưa có nhân viên nào.`);
+    let contestState = null;
+    if (contest) {
+      if (workersOf(team).length < 2) throw new UserError(`Thi đấu cần ít nhất hai nhân viên, mà team "${team.name}" chỉ có ${workersOf(team).length}.`);
+      contestState = { sets: validateSets(contest, path.join(this.r.cfg.toolDir, 'skills.lock')), status: 'splitting' };
+    }
     let baseCommit;
     try {
       baseCommit = await checkRepo(this.r.cfg.projectRoot);
@@ -121,7 +130,9 @@ export class Jobs {
       throw new UserError(err.message, { cause: err });
     }
 
-    const job = this.store.createJob({ title: cleanTitle, prompt: cleanPrompt, acceptance: String(acceptance), team: team.id, lead: team.lead, baseCommit });
+    const job = this.store.createJob({
+      title: cleanTitle, prompt: cleanPrompt, acceptance: String(acceptance), team: team.id, lead: team.lead, baseCommit, contest: contestState,
+    });
     const plan = this.r.createLeadTask({ kind: 'plan', job });
     const updated = this.store.updateJob(job.id, { plan_task_id: plan.id });
     this.r.log(plan.id, 'job', `Việc lớn #${job.id} "${job.title}" giao cho ${team.name}. ${team.lead} sẽ lập kế hoạch.`);
@@ -206,15 +217,90 @@ export class Jobs {
     this.r.schedule();
   }
 
+  // ---------- Chủ xử lý việc lớn lỗi ----------
+
+  /**
+   * Mở lại một việc lớn đã kết thúc ở trạng thái "cần xem" hoặc "lỗi" (không thuộc yêu cầu nào) để xử lý lại việc con lỗi.
+   * Nhánh gộp cũ vẫn giữ; khi các việc con xong, hệ thống gộp lại sang nhánh mới.
+   */
+  async reopen(jobId) {
+    let job = this.store.getJob(jobId);
+    if (!job) throw new UserError('Không có việc lớn này.');
+    if (!['attention', 'failed'].includes(job.status)) throw new UserError('Việc lớn này không mở lại được.');
+    // Việc lớn thuộc một yêu cầu: chỉ mở lại khi yêu cầu cho phép (xem epicJobRescueBlock). Kiểm tra trước khi động vào thư mục gộp.
+    if (job.epic_id !== null) {
+      const blocked = epicJobRescueBlock(this.store, job);
+      if (blocked) throw new UserError(`Việc lớn này không mở lại được: ${blocked}`);
+    }
+    if (job.merge_worktree) {
+      await removeWorktreeKeepBranch({ projectRoot: this.r.cfg.projectRoot, worktreesDir: this.r.cfg.worktreesDir, dir: job.merge_worktree });
+    }
+    // Từ đây không await nữa: mở lại yêu cầu và việc lớn trong cùng một nhịp. (Trong lúc dọn thư mục, trạng thái có thể đã đổi.)
+    job = this.store.getJob(jobId);
+    if (!['attention', 'failed'].includes(job.status)) throw new UserError('Việc lớn này không mở lại được.');
+    if (job.epic_id !== null) this.r.epics.reopenForJob(job);
+    const updated = this.store.updateJob(jobId, {
+      status: 'running', error: null, summary: null, conflict_files: null, merge_branch: null, merge_worktree: null, finished_at: null,
+    });
+    this.jobLog(updated, 'job', `Chủ mở lại việc lớn #${jobId} để xử lý việc con lỗi${job.merge_branch ? ` (nhánh gộp cũ ${job.merge_branch} vẫn được giữ)` : ''}.`);
+    this.r.emit('job', updated);
+    return updated;
+  }
+
+  /** Việc lớn lỗi mà chưa có việc con nào (Trưởng nhóm lập kế hoạch lỗi hoặc không chia được việc): cho Trưởng nhóm lập kế hoạch lại. */
+  replan(jobId, { guidance } = {}) {
+    const job = this.store.getJob(jobId);
+    if (!job) throw new UserError('Không có việc lớn này.');
+    if (job.status !== 'failed') throw new UserError('Chỉ lập kế hoạch lại được cho việc lớn đang ở trạng thái lỗi.');
+    if (this.store.jobTasks(jobId).some((t) => t.kind === 'work')) {
+      throw new UserError('Việc lớn này đã có việc con. Hãy xử lý từng việc con lỗi thay vì lập kế hoạch lại.');
+    }
+    const note = String(guidance ?? '').trim();
+    if (note.length > 2000) throw new UserError('Lời dặn quá dài (tối đa 2000 ký tự).');
+    // Việc lớn của một yêu cầu: mở lại yêu cầu trước (ném lỗi nếu yêu cầu không cho phép).
+    if (job.epic_id !== null) this.r.epics.reopenForJob(job);
+    const plan = this.r.createLeadTask({ kind: 'plan', job });
+    if (note) this.store.updateTask(plan.id, { owner_guidance: note });
+    const updated = this.store.updateJob(jobId, { status: 'planning', error: null, summary: null, plan_task_id: plan.id, finished_at: null });
+    this.r.log(plan.id, 'job', `Chủ cho ${job.lead} lập kế hoạch lại cho việc lớn #${job.id}.${note ? ` Lời dặn: ${note}` : ''}`);
+    this.r.emit('job', updated);
+    this.r.schedule();
+    return updated;
+  }
+
   // ---------- Công cụ của Trưởng nhóm ----------
 
   describeWorkload(planTask) {
     return this.renderWorkload(this.teamOf(planTask));
   }
 
+  /** Phạm vi file của một việc con: chuẩn hóa, và phải nằm trong thư mục của team (hồ sơ dự án), vì hook chỉ cho nhân viên sửa ở đó. */
+  checkScope(rawFiles, team) {
+    const files = normalizeFiles(rawFiles);
+    const folders = (this.r.getProject()?.folders?.[team.id] ?? []).map((f) => normalizeFiles([f])[0]);
+    if (folders.length) {
+      const outside = files.filter((f) => !folders.some((a) => f === a || f.startsWith(`${a}/`)));
+      if (outside.length) {
+        throw toolError(
+          `Phạm vi ${outside.map((f) => `"${f}"`).join(', ')} nằm ngoài thư mục của ${team.name} (${folders.join(', ')}). ` +
+            'Nhân viên của team không sửa được ở đó (sẽ bị chặn), nên đó là phần của team khác. Chỉ giao việc trong thư mục của team, và bỏ phần thuộc team khác ra khỏi việc này.',
+        );
+      }
+    }
+    return files;
+  }
+
+  /** Thi đấu skill: giao cùng một việc cho hai người (được miễn luật "không chồng lấn phạm vi", vì chỉ một nhánh được gộp). */
+  assignContest(planTask, args) {
+    const job = this.store.getJob(planTask.job_id);
+    if (!job || JOB_TERMINAL.includes(job.status)) throw toolError('Việc lớn này đã kết thúc, không giao thêm được.');
+    return this.contests.assign(planTask, args, { checkScope: (files, team) => this.checkScope(files, team), toolError });
+  }
+
   assign(planTask, args) {
     const job = this.store.getJob(planTask.job_id);
     if (!job || JOB_TERMINAL.includes(job.status)) throw toolError('Việc lớn này đã kết thúc, không giao thêm được.');
+    if (parseContest(job)) throw toolError('Đây là việc thi đấu skill: hãy dùng assign_contest để giao cùng một việc cho hai người, không dùng assign_to_member.');
     const team = this.teamOf(planTask);
     const workers = workersOf(team);
 
@@ -237,18 +323,7 @@ export class Jobs {
       throw toolError(`Đã có việc con tên "${title}" trong việc lớn này. Hãy đặt tiêu đề khác, hoặc bỏ qua nếu bạn đã giao việc này rồi.`);
     }
 
-    const files = normalizeFiles(args.files);
-    // Thư mục của team (hồ sơ dự án): việc giao cho nhân viên phải nằm trong đó, vì hook chỉ cho họ sửa ở đây.
-    const folders = (this.r.getProject()?.folders?.[team.id] ?? []).map((f) => normalizeFiles([f])[0]);
-    if (folders.length) {
-      const outside = files.filter((f) => !folders.some((a) => f === a || f.startsWith(`${a}/`)));
-      if (outside.length) {
-        throw toolError(
-          `Phạm vi ${outside.map((f) => `"${f}"`).join(', ')} nằm ngoài thư mục của ${team.name} (${folders.join(', ')}). ` +
-            'Nhân viên của team không sửa được ở đó (sẽ bị chặn), nên đó là phần của team khác. Chỉ giao việc trong thư mục của team, và bỏ phần thuộc team khác ra khỏi việc này.',
-        );
-      }
-    }
+    const files = this.checkScope(args.files, team);
     for (const other of existing.filter((t) => !['failed', 'stopped'].includes(t.status))) {
       const clash = findOverlap(files, parseFiles(other.files));
       if (clash) {
@@ -294,7 +369,10 @@ export class Jobs {
 
     const max = team.limits.max_revisions;
     if (subject.revisions >= max) {
-      this.r.update(subject.id, { status: 'failed', error: `Bị trả bài quá ${max} lần mà vẫn chưa đạt. Nhận xét cuối: ${shorten(feedback, 400)}`, finished_at: Date.now() });
+      this.r.update(subject.id, {
+        status: 'failed', failure_code: 'rejected_final', finished_at: Date.now(),
+        error: `Bị trả bài quá ${max} lần mà vẫn chưa đạt. Nhận xét cuối: ${shorten(feedback, 400)}`,
+      });
       this.r.update(reviewTask.id, { verdict: 'reject_final' });
       this.r.log(subject.id, 'review', `${reviewTask.member} trả bài lần cuối: ${shorten(feedback, 300)}. Đã hết ${max} lần được trả, việc này cần con người xem.`);
       return `Việc #${subject.id} đã bị trả ${subject.revisions}/${max} lần nên không trả thêm được. Hệ thống ghi nhận việc này chưa đạt và cần người xem.`;
@@ -316,6 +394,11 @@ export class Jobs {
     const job = this.store.getJob(task.job_id);
     if (!job || JOB_TERMINAL.includes(job.status)) return;
 
+    if (parseContest(job) && task.kind === 'work') {
+      // Thi đấu: không duyệt riêng từng bài. Đợi cả hai bản nộp xong rồi chụp ảnh cho chủ chọn (xem contest.mjs).
+      await this.contests.progress(job.id);
+      return;
+    }
     if (task.kind === 'work' && task.status === 'submitted') {
       const pending = this.store.jobTasks(job.id).some((t) => t.kind === 'review' && t.subject_id === task.id && LEAD_OPEN.includes(t.status));
       if (!pending) this.r.createLeadTask({ kind: 'review', job, subject: task });
@@ -341,7 +424,10 @@ export class Jobs {
       this.r.schedule();
       return;
     }
-    this.r.update(subject.id, { status: 'failed', error: 'Trưởng nhóm không đưa ra được kết luận sau hai lượt duyệt. Cần con người xem.', finished_at: Date.now() });
+    this.r.update(subject.id, {
+      status: 'failed', failure_code: 'review_no_verdict', finished_at: Date.now(),
+      error: 'Trưởng nhóm không đưa ra được kết luận sau hai lượt duyệt. Cần con người xem.',
+    });
     this.r.log(subject.id, 'error', 'Trưởng nhóm không đưa ra được kết luận sau hai lượt duyệt.');
   }
 
@@ -375,9 +461,13 @@ export class Jobs {
   /** Tính lại trạng thái việc lớn từ trạng thái các việc con; khi mọi việc đã xong thì gộp nhánh và báo cáo. */
   async advance(jobId) {
     const job = this.store.getJob(jobId);
-    if (!job || JOB_TERMINAL.includes(job.status) || ['integrating', 'draft', 'waiting'].includes(job.status)) return;
+    if (!job || JOB_TERMINAL.includes(job.status) || ['integrating', 'draft', 'waiting', 'awaiting_choice'].includes(job.status)) return;
+    if (parseContest(job)) {
+      await this.contests.progress(jobId);
+      return;
+    }
     const tasks = this.store.jobTasks(jobId);
-    const plan = tasks.find((t) => t.kind === 'plan');
+    const plan = tasks.filter((t) => t.kind === 'plan').at(-1); // lượt mới nhất (chủ có thể đã cho lập kế hoạch lại)
     const work = tasks.filter((t) => t.kind === 'work');
     const planOpen = plan && LEAD_OPEN.includes(plan.status);
     const reviewOpen = tasks.some((t) => t.kind === 'review' && LEAD_OPEN.includes(t.status));
@@ -457,13 +547,26 @@ export class Jobs {
       job.prompt,
     ];
     if (job.acceptance?.trim()) lines.push('', '## Tiêu chí hoàn thành của cả việc lớn', job.acceptance.trim());
-    lines.push(
-      '',
-      '## Tải hiện tại của team',
-      this.renderWorkload(team),
-      '',
-      `Hãy đọc code liên quan, chia việc lớn này thành tối đa ${team.limits.max_subtasks} việc con độc lập và giao từng việc bằng công cụ assign_to_member.`,
-    );
+    if (parseContest(job)) {
+      lines.push(
+        '',
+        '## Đây là cuộc THI ĐẤU SKILL (không chia việc)',
+        'Chủ công ty muốn so sánh hai cách làm trên CÙNG một sản phẩm. Đừng chia nhỏ và đừng dùng assign_to_member.',
+        '- Gọi get_team_workload, chọn đúng HAI nhân viên còn chỗ và có thế mạnh phù hợp.',
+        '- Viết MỘT đề bài đầy đủ và gọi assign_contest đúng một lần: cả hai người nhận cùng đề bài, cùng tiêu chí, làm độc lập trên hai nhánh riêng.',
+        '- Đề bài phải đủ cụ thể để hai bản so sánh được với nhau (trang nào, thành phần nào, dữ liệu mẫu nào), nhưng KHÔNG gợi ý phong cách thiết kế, màu sắc hay cách trình bày: đó chính là thứ đem ra so sánh.',
+        '- Hệ thống tự gán ngẫu nhiên bộ skill cho từng người và ẩn danh khi chủ xem; bạn không biết và không cần biết ai dùng bộ nào.',
+        '- "files" là thư mục/file mà CẢ HAI cùng sửa (được phép trùng nhau). Kết thúc bằng một đoạn tóm tắt ngắn.',
+      );
+    } else {
+      lines.push(
+        '',
+        '## Tải hiện tại của team',
+        this.renderWorkload(team),
+        '',
+        `Hãy đọc code liên quan, chia việc lớn này thành tối đa ${team.limits.max_subtasks} việc con độc lập và giao từng việc bằng công cụ assign_to_member.`,
+      );
+    }
     return lines.join('\n');
   }
 

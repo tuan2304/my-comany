@@ -152,6 +152,16 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   fail_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS push_session ON push_subscriptions (session_hash);
+CREATE TABLE IF NOT EXISTS integrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  ref_id INTEGER NOT NULL,
+  branch TEXT NOT NULL,
+  target TEXT NOT NULL,
+  commit_id TEXT,
+  merged_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS integrations_ref ON integrations (kind, ref_id);
 `;
 
 // Cột thêm sau này: chạy ALTER TABLE nếu cơ sở dữ liệu cũ chưa có.
@@ -170,6 +180,15 @@ const EXTRA_COLUMNS = [
   ['verdict', 'TEXT'],
   // Giai đoạn 3: lượt làm việc của Giám đốc (kind: dplan | dreview) thuộc một yêu cầu (epic).
   ['epic_id', 'INTEGER'],
+  // Xử lý việc lỗi: mã lỗi (xem diagnose.mjs), lời dặn của chủ cho lần làm tiếp, số lần chủ đã cho làm tiếp/làm lại.
+  ['failure_code', 'TEXT'],
+  ['owner_guidance', 'TEXT'],
+  ['recoveries', 'INTEGER NOT NULL DEFAULT 0'],
+  ['auto_retries', 'INTEGER NOT NULL DEFAULT 0'],
+  // Câu hỏi đang chờ chính chủ trả lời (mã trong bảng questions), null nếu không có.
+  ['ask_owner_id', 'INTEGER'],
+  // Thi đấu skill: bộ skill riêng của việc này (JSON, mảng tên skill), đè lên skill mặc định của vai trò.
+  ['skill_set', 'TEXT'],
 ];
 
 // Cột thêm cho bảng jobs ở giai đoạn 3: việc lớn của team nằm trong một yêu cầu, có thể phụ thuộc việc khác.
@@ -179,6 +198,8 @@ const JOB_EXTRA_COLUMNS = [
   ['base_ref', 'TEXT'],
   ['base_dir', 'TEXT'],
   ['round', 'INTEGER NOT NULL DEFAULT 0'],
+  // Thi đấu skill (JSON): hai bộ skill, hai bài dự thi, ảnh chụp và kết quả chọn. Xem contest.mjs.
+  ['contest', 'TEXT'],
 ];
 
 const SCHEDULE_COLUMNS = new Set([
@@ -192,7 +213,7 @@ const EPIC_COLUMNS = new Set([
 
 const JOB_COLUMNS = new Set([
   'prompt', 'depends_on', 'base_ref', 'base_dir', 'status', 'summary', 'error', 'base_commit', 'merge_branch', 'merge_worktree', 'conflict_files',
-  'plan_task_id', 'finished_at',
+  'plan_task_id', 'finished_at', 'contest',
 ]);
 
 const QUESTION_COLUMNS = new Set(['status', 'answer', 'answer_task_id', 'delivered', 'answered_at']);
@@ -206,6 +227,9 @@ function migrate(db) {
   for (const [name, definition] of EXTRA_COLUMNS) {
     if (!have.has(name)) db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${definition}`);
   }
+  const haveQuestions = new Set(db.prepare('PRAGMA table_info(questions)').all().map((row) => row.name));
+  // Phương án gợi ý (JSON) khi nhân viên hỏi chủ công ty.
+  if (!haveQuestions.has('options')) db.exec('ALTER TABLE questions ADD COLUMN options TEXT');
   const haveJobs = new Set(db.prepare('PRAGMA table_info(jobs)').all().map((row) => row.name));
   for (const [name, definition] of JOB_EXTRA_COLUMNS) {
     if (!haveJobs.has(name)) db.exec(`ALTER TABLE jobs ADD COLUMN ${name} ${definition}`);
@@ -214,6 +238,7 @@ function migrate(db) {
 
 const TASK_COLUMNS = new Set([
   'level', 'level_source', 'level_reason', 'escalations', 'revisions', 'review_feedback', 'files', 'verdict', 'epic_id',
+  'failure_code', 'owner_guidance', 'recoveries', 'auto_retries', 'ask_owner_id',
   'status', 'model', 'effort', 'session_id', 'worktree', 'branch', 'base_commit', 'attempts', 'result',
   'error', 'changed_files', 'turns', 'duration_ms', 'input_tokens', 'output_tokens', 'cache_read_tokens',
   'cache_creation_tokens', 'est_cost_usd', 'resume_at', 'started_at', 'finished_at',
@@ -240,17 +265,17 @@ export class Store {
 
   createTask({
     title, prompt, acceptance = '', team, member, role, model, effort, level = 'normal', levelSource = 'user',
-    kind = 'work', jobId = null, subjectId = null, files = null, epicId = null,
+    kind = 'work', jobId = null, subjectId = null, files = null, epicId = null, skillSet = null,
   }) {
     const info = this.db
       .prepare(
         `INSERT INTO tasks (title, prompt, acceptance, team, member, role, status, model, effort, level, level_source,
-                            kind, job_id, subject_id, files, epic_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            kind, job_id, subject_id, files, epic_id, skill_set, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         title, prompt, acceptance, team, member, role, model ?? null, effort ?? null, level, levelSource,
-        kind, jobId, subjectId, files ? JSON.stringify(files) : null, epicId, Date.now(),
+        kind, jobId, subjectId, files ? JSON.stringify(files) : null, epicId, skillSet ? JSON.stringify(skillSet) : null, Date.now(),
       );
     return this.getTask(Number(info.lastInsertRowid));
   }
@@ -259,16 +284,16 @@ export class Store {
 
   createJob({
     title, prompt, acceptance = '', team, lead, baseCommit = null,
-    epicId = null, dependsOn = null, baseRef = null, baseDir = null, round = 0, status = 'planning',
+    epicId = null, dependsOn = null, baseRef = null, baseDir = null, round = 0, status = 'planning', contest = null,
   }) {
     const info = this.db
       .prepare(
-        `INSERT INTO jobs (title, prompt, acceptance, team, lead, status, base_commit, epic_id, depends_on, base_ref, base_dir, round, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO jobs (title, prompt, acceptance, team, lead, status, base_commit, epic_id, depends_on, base_ref, base_dir, round, contest, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         title, prompt, acceptance, team, lead, status, baseCommit, epicId,
-        dependsOn ? JSON.stringify(dependsOn) : null, baseRef, baseDir, round, Date.now(),
+        dependsOn ? JSON.stringify(dependsOn) : null, baseRef, baseDir, round, contest ? JSON.stringify(contest) : null, Date.now(),
       );
     return this.getJob(Number(info.lastInsertRowid));
   }
@@ -330,10 +355,10 @@ export class Store {
 
   // ---- Câu hỏi giữa các nhân viên ----
 
-  createQuestion({ taskId, round, kind, asker, target, text, answerTaskId = null }) {
+  createQuestion({ taskId, round, kind, asker, target, text, answerTaskId = null, options = null }) {
     const info = this.db
-      .prepare('INSERT INTO questions (task_id, round, kind, asker, target, text, answer_task_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(taskId, round, kind, asker, target, text, answerTaskId, Date.now());
+      .prepare('INSERT INTO questions (task_id, round, kind, asker, target, text, answer_task_id, options, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(taskId, round, kind, asker, target, text, answerTaskId, options?.length ? JSON.stringify(options) : null, Date.now());
     return this.getQuestion(Number(info.lastInsertRowid));
   }
 
@@ -486,6 +511,17 @@ export class Store {
     if (ok) this.db.prepare('UPDATE push_subscriptions SET fail_count = 0, last_ok_at = ? WHERE endpoint = ?').run(now, endpoint);
     else this.db.prepare('UPDATE push_subscriptions SET fail_count = fail_count + 1 WHERE endpoint = ?').run(endpoint);
     return this.db.prepare('SELECT fail_count FROM push_subscriptions WHERE endpoint = ?').get(endpoint)?.fail_count ?? 0;
+  }
+
+  /** Ghi lại một lần người dùng đưa kết quả vào dự án (gộp nhánh công ty vào nhánh đang làm việc). */
+  addIntegration({ kind, refId, branch, target, commitId, now = Date.now() }) {
+    this.db
+      .prepare('INSERT INTO integrations (kind, ref_id, branch, target, commit_id, merged_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(kind, refId, branch, target, commitId ?? null, now);
+  }
+
+  lastIntegration(kind, refId) {
+    return this.db.prepare('SELECT * FROM integrations WHERE kind = ? AND ref_id = ? ORDER BY id DESC LIMIT 1').get(kind, refId) ?? null;
   }
 
   getEpic(id) {

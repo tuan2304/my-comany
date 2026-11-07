@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import PwaRegister from '@/components/PwaRegister';
+import { THEME_BOOT_SCRIPT } from '@/lib/theme-boot';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -13,12 +14,15 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#2f6fed',
+  themeColor: '#0a0b16',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="vi">
+    <html lang="vi" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body>
         {children}
         <PwaRegister />

@@ -159,6 +159,15 @@ if (args.includes('--mcp-config') && !isWorkerWithTools) {
   if (process.env.FAKE_LEAD_DELAY_MS) await new Promise((r) => setTimeout(r, Number(process.env.FAKE_LEAD_DELAY_MS)));
 
   const allowed = allowedArg;
+  // FAKE_LEAD_FAIL='plan,dplan,dreview': các loại lượt của Trưởng nhóm/Giám đốc cần giả lập tiến trình tự thoát (lỗi).
+  const leadKind = allowed.includes('mcp__company__review_submission') ? 'review'
+    : allowed.includes('mcp__company__finish_epic') ? 'dreview'
+      : allowed.includes('mcp__company__set_contract') ? 'dplan' : 'plan';
+  if ((process.env.FAKE_LEAD_FAIL ?? '').split(',').includes(leadKind)) {
+    process.stderr.write(`lỗi giả lập của lượt ${leadKind}\n`);
+    await new Promise((r) => setTimeout(r, 100)); // để dòng "init" (mã phiên) kịp ra khỏi ống trước khi thoát
+    process.exit(2);
+  }
   if (allowed.includes('mcp__company__review_submission')) {
     // Duyệt bài
     const subject = Number(prompt.match(/task_id: (\d+)/)?.[1]);
@@ -201,10 +210,14 @@ if (args.includes('--mcp-config') && !isWorkerWithTools) {
     // Trưởng nhóm lập kế hoạch: mỗi team có kế hoạch riêng trong FAKE_PLANS (khóa là id team ghi ở đầu yêu cầu)
     const teamId = prompt.match(/team_id: (\w+)/)?.[1];
     const plans = JSON.parse(process.env.FAKE_PLANS ?? '{}');
-    const plan = plans[teamId] ?? JSON.parse(process.env.FAKE_PLAN ?? '[]');
+    // Lượt làm tiếp phiên cũ (--resume) có lời nhắc ngắn, không ghi team_id: nếu chỉ khai kế hoạch cho đúng một team thì dùng nó.
+    const onlyPlan = Object.keys(plans).length === 1 ? Object.values(plans)[0] : null;
+    const plan = plans[teamId] ?? (teamId ? null : onlyPlan) ?? JSON.parse(process.env.FAKE_PLAN ?? '[]');
     await call('get_team_workload', {});
     const replies = [];
-    for (const item of plan) replies.push((await call('assign_to_member', item)).text);
+    // FAKE_CONTEST: kế hoạch của việc lớn thi đấu skill (một lần gọi assign_contest thay vì assign_to_member).
+    if (process.env.FAKE_CONTEST) replies.push((await call('assign_contest', JSON.parse(process.env.FAKE_CONTEST))).text);
+    else for (const item of plan) replies.push((await call('assign_to_member', item)).text);
     result({ subtype: 'success', is_error: false, result: `Kế hoạch: ${plan.length} việc con.\n${replies.join('\n')}` });
   }
   process.exit(0);
@@ -242,6 +255,17 @@ switch (scenario) {
   case 'crash':
     process.stderr.write('lỗi giả lập\n');
     process.exitCode = 2;
+    break;
+  case 'crash_once':
+    // Lần đầu tiến trình tự thoát; lần sau (--resume, tức tự thử lại) thì làm xong.
+    if (resumed) {
+      rateLimit('allowed', nowSec + 3600);
+      doWork();
+      result({ subtype: 'success', is_error: false, result: 'Xong sau khi tự thử lại.' });
+    } else {
+      process.stderr.write('lỗi giả lập một lần\n');
+      process.exitCode = 2;
+    }
     break;
   case 'hang':
     rateLimit('allowed', nowSec + 3600);

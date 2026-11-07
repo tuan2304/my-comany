@@ -57,12 +57,6 @@ function hash(text: string): number {
   return h;
 }
 
-/** Quay dần `cur` về `target` (radian) theo đường ngắn nhất. */
-export function turnToward(cur: number, target: number, amount: number): number {
-  const d = ((((target - cur + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI;
-  return cur + d * Math.min(1, amount);
-}
-
 /** Hướng (xuống, lên, trái, phải) gần nhất với góc nhìn. */
 export function dirOf(heading: number): 'down' | 'up' | 'left' | 'right' {
   const s = Math.sin(heading);
